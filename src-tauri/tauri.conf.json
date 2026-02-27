@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "dubverse",
-        "width": 800,
-        "height": 600
+        "title": "Dubverse",
+        "width": 1200,
+        "height": 800,
+        "center": true,
+        "decorations": false
       }
     ],
     "security": {
