@@ -227,10 +227,10 @@ fn join_words_smart(words: &[(f64, f64, String)]) -> String {
 ///   4. Adding current word would exceed MAX_CHARS → hard split before current word
 fn segment_elevenlabs_words(json: &serde_json::Value) -> Result<Vec<SubtitleItem>, String> {
     const GAP_THRESHOLD: f64 = 1.0;   // seconds — hard split on silence
-    const MAX_CHARS: usize = 25;       // Unicode chars — hard line limit
-    const SOFT_CHARS: usize = 15;      // Unicode chars — soft limit for pause-based split
+    const MAX_CHARS: usize = 50;       // Unicode chars — hard line limit (incl. spaces)
+    const SOFT_CHARS: usize = 33;      // Unicode chars — soft limit for pause-based split (incl. spaces)
 
-    let sentence_end: &[char] = &['。', '！', '？', '…'];
+    let sentence_end: &[char] = &['。', '！', '？', '…', '.', '!', '?'];
     let sentence_pause: &[char] = &['，', '、', '；', ',', ';'];
 
     let words_arr = json["words"]
@@ -258,13 +258,16 @@ fn segment_elevenlabs_words(json: &serde_json::Value) -> Result<Vec<SubtitleItem
         let gap = start - prev_end;
 
         // Hard split: silence gap or line would exceed MAX_CHARS
-        if !seg.is_empty() && (gap > GAP_THRESHOLD || seg_chars + char_count > MAX_CHARS) {
+        // +1 accounts for the space join_words_smart inserts between words
+        let space = if seg.is_empty() { 0 } else { 1 };
+        if !seg.is_empty() && (gap > GAP_THRESHOLD || seg_chars + space + char_count > MAX_CHARS) {
             subtitles.push(flush_seg(&mut seg, &mut seg_chars, id));
             id += 1;
         }
 
         prev_end = end;
-        seg_chars += char_count;
+        let space = if seg.is_empty() { 0 } else { 1 };
+        seg_chars += space + char_count;
         let ends_sentence = text.chars().last().map_or(false, |c| sentence_end.contains(&c));
         let ends_pause = text.chars().last().map_or(false, |c| sentence_pause.contains(&c));
         seg.push((start, end, text));
