@@ -18,31 +18,36 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-function onFileDrop(file: File) {
+function onFileDrop({ name, path, file }: { name: string; path: string; file?: File }) {
   const vf: VideoFile = {
-    name: file.name,
-    path: (file as any).path || file.name,
-    size: file.size,
+    name,
+    path,
+    size: file?.size ?? 0,
     duration: 0,
     width: 0,
     height: 0,
   }
-  // Extract video metadata via a temporary video element
-  const url = URL.createObjectURL(file)
-  const video = document.createElement('video')
-  video.preload = 'metadata'
-  video.onloadedmetadata = () => {
-    vf.duration = video.duration
-    vf.width = video.videoWidth
-    vf.height = video.videoHeight
-    URL.revokeObjectURL(url)
+
+  if (file) {
+    // Extract video metadata via a temporary video element (only available for <input> selection)
+    const url = URL.createObjectURL(file)
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.onloadedmetadata = () => {
+      vf.duration = video.duration
+      vf.width = video.videoWidth
+      vf.height = video.videoHeight
+      URL.revokeObjectURL(url)
+      setVideoFile(vf)
+    }
+    video.onerror = () => {
+      URL.revokeObjectURL(url)
+      setVideoFile(vf)
+    }
+    video.src = url
+  } else {
     setVideoFile(vf)
   }
-  video.onerror = () => {
-    URL.revokeObjectURL(url)
-    setVideoFile(vf)
-  }
-  video.src = url
 }
 </script>
 
@@ -59,7 +64,7 @@ function onFileDrop(file: File) {
       <div class="file-card__info">
         <p class="file-card__name">{{ videoFile.name }}</p>
         <div class="file-card__meta">
-          <span>{{ formatSize(videoFile.size) }}</span>
+          <span v-if="videoFile.size > 0">{{ formatSize(videoFile.size) }}</span>
           <span v-if="videoFile.duration">{{ formatDuration(videoFile.duration) }}</span>
           <span v-if="videoFile.width">{{ videoFile.width }}×{{ videoFile.height }}</span>
         </div>

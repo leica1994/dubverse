@@ -6,18 +6,6 @@ import type {
   ConfigFieldSchema,
 } from '@/types/transcription'
 
-const LANGUAGE_OPTIONS = [
-  { value: 'auto', label: '自动检测' },
-  { value: 'zh', label: '中文' },
-  { value: 'en', label: '英语' },
-  { value: 'ja', label: '日语' },
-  { value: 'ko', label: '韩语' },
-  { value: 'es', label: '西班牙语' },
-  { value: 'fr', label: '法语' },
-  { value: 'de', label: '德语' },
-  { value: 'ru', label: '俄语' },
-]
-
 const MODEL_OPTIONS = [
   { value: 'scribe_v2', label: 'Scribe v2（推荐）' },
   { value: 'scribe_v1', label: 'Scribe v1（旧版本）' },
@@ -28,24 +16,8 @@ const bcutProvider: TranscriptionProvider<'bcut'> = {
   name: 'B站转录',
   description: '使用哔哩哔哩字幕识别服务，无需 API 密钥，适合中文内容',
   requiresApiKey: false,
-  defaultConfig: {
-    language: 'auto',
-    needWordTimestamp: false,
-  },
-  configSchema: [
-    {
-      key: 'language',
-      label: '语言',
-      type: 'select',
-      options: LANGUAGE_OPTIONS,
-    },
-    {
-      key: 'needWordTimestamp',
-      label: '词级时间戳',
-      type: 'toggle',
-      hint: '为每个词生成精确时间戳，处理速度较慢',
-    },
-  ] as ConfigFieldSchema[],
+  defaultConfig: {} as BcutConfig,
+  configSchema: [] as ConfigFieldSchema[],
   validate: (_config: BcutConfig) => ({ valid: true, errors: {} }),
 }
 
@@ -56,7 +28,6 @@ const elevenLabsFreeProvider: TranscriptionProvider<'elevenlabs-free'> = {
   requiresApiKey: false,
   defaultConfig: {
     modelId: 'scribe_v2',
-    language: 'auto',
     numSpeakers: 0,
     tagAudioEvents: false,
   },
@@ -66,12 +37,6 @@ const elevenLabsFreeProvider: TranscriptionProvider<'elevenlabs-free'> = {
       label: '模型版本',
       type: 'select',
       options: MODEL_OPTIONS,
-    },
-    {
-      key: 'language',
-      label: '语言',
-      type: 'select',
-      options: LANGUAGE_OPTIONS,
     },
     {
       key: 'numSpeakers',
@@ -105,7 +70,6 @@ const elevenLabsPaidProvider: TranscriptionProvider<'elevenlabs-paid'> = {
   defaultConfig: {
     apiKey: '',
     modelId: 'scribe_v2',
-    language: 'auto',
     numSpeakers: 0,
     enableDiarization: false,
     tagAudioEvents: false,
@@ -125,12 +89,6 @@ const elevenLabsPaidProvider: TranscriptionProvider<'elevenlabs-paid'> = {
       label: '模型版本',
       type: 'select',
       options: MODEL_OPTIONS,
-    },
-    {
-      key: 'language',
-      label: '语言',
-      type: 'select',
-      options: LANGUAGE_OPTIONS,
     },
     {
       key: 'numSpeakers',

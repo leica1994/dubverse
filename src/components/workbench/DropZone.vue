@@ -1,14 +1,40 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import IconUpload from '@/components/icons/IconUpload.vue'
 
 const emit = defineEmits<{
-  drop: [file: File]
+  drop: [{ name: string; path: string; file?: File }]
 }>()
 
 const isDragOver = ref(false)
-const fileInput = ref<HTMLInputElement>()
 
+const VIDEO_EXTS = /\.(mp4|mov|avi|mkv|webm|flv|wmv|ts|m4v)$/i
+
+let unlistenDrop: (() => void) | undefined
+
+onMounted(async () => {
+  unlistenDrop = await getCurrentWindow().onDragDropEvent((event) => {
+    if (event.payload.type === 'enter' || event.payload.type === 'over') {
+      isDragOver.value = true
+    } else if (event.payload.type === 'leave') {
+      isDragOver.value = false
+    } else if (event.payload.type === 'drop') {
+      isDragOver.value = false
+      const paths: string[] = (event.payload as any).paths ?? []
+      const videoPath = paths.find(p => VIDEO_EXTS.test(p))
+      if (videoPath) {
+        const name = videoPath.replace(/\\/g, '/').split('/').pop() ?? videoPath
+        emit('drop', { name, path: videoPath })
+      }
+    }
+  })
+})
+
+onUnmounted(() => unlistenDrop?.())
+
+// Keep browser drag handlers for visual feedback only
 function onDragOver(e: DragEvent) {
   e.preventDefault()
   isDragOver.value = true
@@ -21,22 +47,14 @@ function onDragLeave() {
 function onDrop(e: DragEvent) {
   e.preventDefault()
   isDragOver.value = false
-  const file = e.dataTransfer?.files[0]
-  if (file && file.type.startsWith('video/')) {
-    emit('drop', file)
-  }
+  // Path is handled by the Tauri native onDragDropEvent listener above
 }
 
-function onClickSelect() {
-  fileInput.value?.click()
-}
-
-function onFileChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (file) {
-    emit('drop', file)
-    input.value = ''
+async function onClickSelect() {
+  const path = await invoke<string | null>('cmd_pick_video_file')
+  if (path) {
+    const name = path.replace(/\\/g, '/').split('/').pop() ?? path
+    emit('drop', { name, path })
   }
 }
 </script>
@@ -53,13 +71,6 @@ function onFileChange(e: Event) {
     <p class="drop-zone__title">拖拽视频文件到此处</p>
     <p class="drop-zone__hint">或点击下方按钮选择文件</p>
     <button class="drop-zone__btn" @click="onClickSelect">选择文件</button>
-    <input
-      ref="fileInput"
-      type="file"
-      accept="video/*"
-      class="drop-zone__input"
-      @change="onFileChange"
-    />
   </div>
 </template>
 
@@ -116,9 +127,5 @@ function onFileChange(e: Event) {
 
 .drop-zone__btn:hover {
   background: var(--accent-hover);
-}
-
-.drop-zone__input {
-  display: none;
 }
 </style>

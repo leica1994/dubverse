@@ -55,7 +55,7 @@ fn sanitize_stem(s: &str) -> String {
 
 // ─── 2. Extract audio via ffmpeg ────────────────────────────────────────────────
 
-/// Runs `ffmpeg -y -i {video_path} -vn -acodec pcm_s16le -ar 16000 -ac 1 {output_path}`.
+/// Runs `ffmpeg -y -i {video_path} -vn -acodec libmp3lame -ar 16000 -ac 1 -q:a 4 {output_path}`.
 #[tauri::command]
 pub async fn cmd_extract_audio(
     video_path: String,
@@ -69,11 +69,13 @@ pub async fn cmd_extract_audio(
                 &video_path,
                 "-vn",
                 "-acodec",
-                "pcm_s16le",
+                "libmp3lame",
                 "-ar",
                 "16000",
                 "-ac",
                 "1",
+                "-q:a",
+                "4",
                 &output_path,
             ])
             .output()
@@ -98,7 +100,8 @@ pub async fn cmd_extract_audio(
 // ─── 3. Transcribe via ElevenLabs STT ───────────────────────────────────────────
 
 /// Calls ElevenLabs `/v1/speech-to-text` (multipart).
-/// `api_key` empty → no auth header (free tier).
+/// - `api_key` empty → unauthenticated free tier (requires `allow_unauthenticated=1` + browser headers)
+/// - `api_key` set   → authenticated paid tier (`xi-api-key` header)
 /// Returns JSON-serialized `Vec<SubtitleItem>`.
 #[tauri::command]
 pub async fn cmd_transcribe_elevenlabs(
@@ -107,6 +110,7 @@ pub async fn cmd_transcribe_elevenlabs(
     language: String,
     num_speakers: u32,
     tag_audio_events: bool,
+    enable_diarization: bool,
     api_key: String,
 ) -> Result<String, String> {
     let bytes = tokio::task::spawn_blocking({
@@ -118,8 +122,8 @@ pub async fn cmd_transcribe_elevenlabs(
     .map_err(|e| format!("读取音频文件失败: {}", e))?;
 
     let file_part = reqwest::multipart::Part::bytes(bytes)
-        .file_name("audio.wav")
-        .mime_str("audio/wav")
+        .file_name("audio.mp3")
+        .mime_str("audio/mpeg")
         .map_err(|e| e.to_string())?;
 
     let mut form = reqwest::multipart::Form::new()
@@ -134,12 +138,34 @@ pub async fn cmd_transcribe_elevenlabs(
     }
     form = form.text("tag_audio_events", tag_audio_events.to_string());
 
-    let client = reqwest::Client::new();
-    let mut builder = client
+    let is_free = api_key.is_empty();
+
+    if is_free {
+        // Free tier: diarize must be true for unauthenticated requests
+        form = form.text("diarize", "true");
+    } else {
+        // Paid tier: word-level timestamps (required for segmentation) + caller's diarization choice
+        form = form.text("timestamps_granularity", "word");
+        form = form.text("diarize", enable_diarization.to_string());
+    }
+
+    let mut builder = reqwest::Client::new()
         .post("https://api.elevenlabs.io/v1/speech-to-text")
         .multipart(form);
 
-    if !api_key.is_empty() {
+    if is_free {
+        // Free tier: unauthenticated access via query param + browser-like headers
+        builder = builder
+            .query(&[("allow_unauthenticated", "1")])
+            .header("Origin", "https://elevenlabs.io")
+            .header("Referer", "https://elevenlabs.io/")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36")
+            .header("Accept", "*/*")
+            .header("Sec-Fetch-Dest", "empty")
+            .header("Sec-Fetch-Mode", "cors")
+            .header("Sec-Fetch-Site", "same-site");
+    } else {
+        // Paid tier: API key authentication
         builder = builder.header("xi-api-key", api_key);
     }
 
@@ -159,17 +185,61 @@ pub async fn cmd_transcribe_elevenlabs(
     serde_json::to_string(&subtitles).map_err(|e| e.to_string())
 }
 
+/// Returns true if `c` is a CJK character (Chinese/Japanese/Korean).
+fn is_cjk_char(c: char) -> bool {
+    matches!(c,
+        '\u{4E00}'..='\u{9FFF}'   // CJK Unified Ideographs (汉字)
+        | '\u{3040}'..='\u{309F}' // Hiragana
+        | '\u{30A0}'..='\u{30FF}' // Katakana
+        | '\u{AC00}'..='\u{D7AF}' // Korean Hangul
+    )
+}
+
+/// Joins word tokens intelligently:
+/// - No space between two adjacent CJK chars (handles per-char diarize output)
+/// - No space before CJK punctuation
+/// - Space between non-CJK tokens (English words, numbers)
+fn join_words_smart(words: &[(f64, f64, String)]) -> String {
+    let mut result = String::new();
+    for (i, (_, _, word)) in words.iter().enumerate() {
+        if i == 0 {
+            result.push_str(word);
+            continue;
+        }
+        let prev_last_cjk = words[i - 1].2.chars().last().map_or(false, is_cjk_char);
+        let curr_first_cjk = word.chars().next().map_or(false, is_cjk_char);
+        let curr_is_cjk_punct = word.chars().next()
+            .map_or(false, |c| "，。！？；、…·—".contains(c));
+        if !(prev_last_cjk && curr_first_cjk) && !curr_is_cjk_punct {
+            result.push(' ');
+        }
+        result.push_str(word);
+    }
+    result
+}
+
 /// Segments ElevenLabs word-level response into subtitle entries.
-/// Splits on gap > 1.0s between words OR accumulated char count > 60.
+///
+/// Split rules (in priority order):
+///   1. Time gap > 1.0s between words → hard split before current word
+///   2. Word ends with sentence-final punctuation (。！？…) → split after current word
+///   3. Word ends with pause punctuation (，、；,;) AND seg >= SOFT_CHARS → split after
+///   4. Adding current word would exceed MAX_CHARS → hard split before current word
 fn segment_elevenlabs_words(json: &serde_json::Value) -> Result<Vec<SubtitleItem>, String> {
+    const GAP_THRESHOLD: f64 = 1.0;   // seconds — hard split on silence
+    const MAX_CHARS: usize = 25;       // Unicode chars — hard line limit
+    const SOFT_CHARS: usize = 15;      // Unicode chars — soft limit for pause-based split
+
+    let sentence_end: &[char] = &['。', '！', '？', '…'];
+    let sentence_pause: &[char] = &['，', '、', '；', ',', ';'];
+
     let words_arr = json["words"]
         .as_array()
         .ok_or_else(|| "ElevenLabs 响应缺少 words 数组".to_string())?;
 
     let mut subtitles: Vec<SubtitleItem> = Vec::new();
-    // (start, end, word_text)
     let mut seg: Vec<(f64, f64, String)> = Vec::new();
-    let mut seg_chars = 0usize;
+    let mut seg_chars = 0usize; // Unicode char count
     let mut prev_end = 0.0f64;
     let mut id = 1u32;
 
@@ -178,18 +248,32 @@ fn segment_elevenlabs_words(json: &serde_json::Value) -> Result<Vec<SubtitleItem
             continue;
         }
         let text = w["text"].as_str().unwrap_or("").to_string();
+        if text.is_empty() {
+            continue;
+        }
         let start = w["start"].as_f64().unwrap_or(0.0);
         let end = w["end"].as_f64().unwrap_or(0.0);
+        let char_count = text.chars().count();
 
         let gap = start - prev_end;
-        if !seg.is_empty() && (gap > 1.0 || seg_chars > 60) {
+
+        // Hard split: silence gap or line would exceed MAX_CHARS
+        if !seg.is_empty() && (gap > GAP_THRESHOLD || seg_chars + char_count > MAX_CHARS) {
             subtitles.push(flush_seg(&mut seg, &mut seg_chars, id));
             id += 1;
         }
 
         prev_end = end;
-        seg_chars += text.len();
+        seg_chars += char_count;
+        let ends_sentence = text.chars().last().map_or(false, |c| sentence_end.contains(&c));
+        let ends_pause = text.chars().last().map_or(false, |c| sentence_pause.contains(&c));
         seg.push((start, end, text));
+
+        // Soft split: after sentence-final or pause punctuation
+        if ends_sentence || (ends_pause && seg_chars >= SOFT_CHARS) {
+            subtitles.push(flush_seg(&mut seg, &mut seg_chars, id));
+            id += 1;
+        }
     }
 
     if !seg.is_empty() {
@@ -202,7 +286,7 @@ fn segment_elevenlabs_words(json: &serde_json::Value) -> Result<Vec<SubtitleItem
 fn flush_seg(seg: &mut Vec<(f64, f64, String)>, seg_chars: &mut usize, id: u32) -> SubtitleItem {
     let start_time = seg.first().unwrap().0;
     let end_time = seg.last().unwrap().1;
-    let text = seg.iter().map(|(_, _, t)| t.as_str()).collect::<Vec<_>>().join(" ");
+    let text = join_words_smart(seg);
     seg.clear();
     *seg_chars = 0;
     SubtitleItem { id, start_time, end_time, text }
@@ -210,7 +294,10 @@ fn flush_seg(seg: &mut Vec<(f64, f64, String)>, seg_chars: &mut usize, id: u32) 
 
 // ─── 4. Transcribe via bcut (bilibili) ──────────────────────────────────────────
 
-/// Full bcut pipeline: create task → upload WAV → commit → poll (2s interval, 120s timeout).
+const BCUT_BASE: &str = "https://member.bilibili.com/x/bcut/rubick-interface";
+
+/// Full bcut pipeline (rubick-interface API):
+///   申请上传 → 分片上传(收 ETag) → 提交上传(拿 download_url) → 创建任务 → 轮询结果
 /// Returns JSON-serialized `Vec<SubtitleItem>`.
 #[tauri::command]
 pub async fn cmd_transcribe_bcut(
@@ -219,33 +306,7 @@ pub async fn cmd_transcribe_bcut(
 ) -> Result<String, String> {
     let _ = language; // bcut detects language automatically
 
-    let client = reqwest::Client::new();
-
-    // Step 1: Create task
-    let create_json: serde_json::Value = client
-        .post("https://member.bilibili.com/x/bcut/whale/task")
-        .json(&serde_json::json!({ "type": 2 }))
-        .send()
-        .await
-        .map_err(|e| format!("bcut 创建任务请求失败: {}", e))?
-        .json()
-        .await
-        .map_err(|e| format!("bcut 创建任务响应解析失败: {}", e))?;
-
-    if create_json["code"].as_i64() != Some(0) {
-        return Err(format!("bcut 创建任务错误: {}", create_json));
-    }
-
-    let upload_url = create_json["data"]["upload_url"]
-        .as_str()
-        .ok_or_else(|| "bcut 响应缺少 upload_url".to_string())?
-        .to_string();
-    let task_id = create_json["data"]["task_id"]
-        .as_str()
-        .ok_or_else(|| "bcut 响应缺少 task_id".to_string())?
-        .to_string();
-
-    // Step 2: Upload audio (raw bytes via PUT)
+    // Read audio file
     let audio_bytes = tokio::task::spawn_blocking({
         let p = audio_path.clone();
         move || std::fs::read(&p)
@@ -254,76 +315,157 @@ pub async fn cmd_transcribe_bcut(
     .map_err(|e| e.to_string())?
     .map_err(|e| format!("读取音频文件失败: {}", e))?;
 
-    let upload_resp = client
-        .put(&upload_url)
-        .body(audio_bytes)
+    let file_size = audio_bytes.len();
+    let client = reqwest::Client::builder()
+        .user_agent("Bilibili/1.0.0 (https://www.bilibili.com)")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // ── Step 1: 申请上传 ────────────────────────────────────────────────────────
+    let create_resp: serde_json::Value = client
+        .post(format!("{}/resource/create", BCUT_BASE))
+        .json(&serde_json::json!({
+            "type": 2,
+            "name": "audio.mp3",
+            "size": file_size,
+            "ResourceFileType": "mp3",
+            "model_id": "8"
+        }))
         .send()
         .await
-        .map_err(|e| format!("bcut 上传音频失败: {}", e))?;
-
-    if !upload_resp.status().is_success() {
-        return Err(format!("bcut 上传音频返回 HTTP {}", upload_resp.status()));
-    }
-
-    // Step 3: Commit task
-    let commit_json: serde_json::Value = client
-        .post("https://member.bilibili.com/x/bcut/whale/task/commit")
-        .json(&serde_json::json!({ "task_id": task_id }))
-        .send()
-        .await
-        .map_err(|e| format!("bcut 提交任务请求失败: {}", e))?
+        .map_err(|e| format!("bcut 申请上传失败: {}", e))?
         .json()
         .await
-        .map_err(|e| format!("bcut 提交任务响应解析失败: {}", e))?;
+        .map_err(|e| format!("bcut 申请上传响应解析失败: {}", e))?;
 
-    if commit_json["code"].as_i64() != Some(0) {
-        return Err(format!("bcut 提交任务错误: {}", commit_json));
+    if create_resp["code"].as_i64() != Some(0) {
+        return Err(format!("bcut 申请上传错误: {}", create_resp));
     }
 
-    // Step 4: Poll for result
-    let poll_url = format!(
-        "https://member.bilibili.com/x/bcut/whale/task/result?task_id={}",
-        task_id
-    );
+    let data = &create_resp["data"];
+    let in_boss_key = data["in_boss_key"].as_str()
+        .ok_or("bcut 响应缺少 in_boss_key")?.to_string();
+    let resource_id = data["resource_id"].as_str()
+        .ok_or("bcut 响应缺少 resource_id")?.to_string();
+    let upload_id = data["upload_id"].as_str()
+        .ok_or("bcut 响应缺少 upload_id")?.to_string();
+    let upload_urls: Vec<String> = data["upload_urls"]
+        .as_array()
+        .ok_or("bcut 响应缺少 upload_urls")?
+        .iter()
+        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+        .collect();
+    let per_size = data["per_size"].as_u64().unwrap_or(file_size as u64) as usize;
 
-    for _ in 0..60 {
-        // up to 60 × 2s = 120s
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    // ── Step 2: 分片上传，收集 ETag ─────────────────────────────────────────────
+    let mut etags: Vec<String> = Vec::new();
+    for (i, url) in upload_urls.iter().enumerate() {
+        let start = i * per_size;
+        let end = std::cmp::min(start + per_size, file_size);
+        let chunk = audio_bytes[start..end].to_vec();
 
-        let poll_json: serde_json::Value = client
-            .get(&poll_url)
+        let upload_resp = client
+            .put(url)
+            .body(chunk)
             .send()
             .await
-            .map_err(|e| format!("bcut 轮询请求失败: {}", e))?
+            .map_err(|e| format!("bcut 上传分片 {} 失败: {}", i, e))?;
+
+        if !upload_resp.status().is_success() {
+            return Err(format!("bcut 上传分片 {} 返回 HTTP {}", i, upload_resp.status()));
+        }
+
+        let etag = upload_resp
+            .headers()
+            .get("etag")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        etags.push(etag);
+    }
+
+    // ── Step 3: 提交上传，拿 download_url ───────────────────────────────────────
+    let commit_resp: serde_json::Value = client
+        .post(format!("{}/resource/create/complete", BCUT_BASE))
+        .json(&serde_json::json!({
+            "InBossKey": in_boss_key,
+            "ResourceId": resource_id,
+            "Etags": etags.join(","),
+            "UploadId": upload_id,
+            "model_id": "8"
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("bcut 提交上传失败: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("bcut 提交上传响应解析失败: {}", e))?;
+
+    if commit_resp["code"].as_i64() != Some(0) {
+        return Err(format!("bcut 提交上传错误: {}", commit_resp));
+    }
+
+    let download_url = commit_resp["data"]["download_url"]
+        .as_str()
+        .ok_or("bcut 响应缺少 download_url")?
+        .to_string();
+
+    // ── Step 4: 创建转录任务 ─────────────────────────────────────────────────────
+    let task_resp: serde_json::Value = client
+        .post(format!("{}/task", BCUT_BASE))
+        .json(&serde_json::json!({
+            "resource": download_url,
+            "model_id": "8"
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("bcut 创建任务失败: {}", e))?
+        .json()
+        .await
+        .map_err(|e| format!("bcut 创建任务响应解析失败: {}", e))?;
+
+    if task_resp["code"].as_i64() != Some(0) {
+        return Err(format!("bcut 创建任务错误: {}", task_resp));
+    }
+
+    let task_id = task_resp["data"]["task_id"]
+        .as_str()
+        .ok_or("bcut 响应缺少 task_id")?
+        .to_string();
+
+    // ── Step 5: 轮询结果（2s 间隔，最多 120 次 = 240s）─────────────────────────
+    for _ in 0..120 {
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        let poll_resp: serde_json::Value = client
+            .get(format!("{}/task/result", BCUT_BASE))
+            .query(&[("model_id", "7"), ("task_id", &task_id)])
+            .send()
+            .await
+            .map_err(|e| format!("bcut 轮询失败: {}", e))?
             .json()
             .await
             .map_err(|e| format!("bcut 轮询响应解析失败: {}", e))?;
 
-        if poll_json["code"].as_i64() != Some(0) {
-            return Err(format!("bcut 轮询错误: {}", poll_json));
+        if poll_resp["code"].as_i64() != Some(0) {
+            return Err(format!("bcut 轮询错误: {}", poll_resp));
         }
 
-        let state = poll_json["data"]["state"].as_i64().unwrap_or(0);
+        let state = poll_resp["data"]["state"].as_i64().unwrap_or(0);
         match state {
             4 => {
-                // Success
-                let subtitles = parse_bcut_result(&poll_json["data"]["result"])?;
+                let subtitles = parse_bcut_result(&poll_resp["data"]["result"])?;
                 return serde_json::to_string(&subtitles).map_err(|e| e.to_string());
             }
-            3 => {
-                return Err("bcut 转录失败（服务器端错误）".to_string());
-            }
-            _ => {
-                // Still processing — keep polling
-            }
+            3 => return Err("bcut 转录失败（服务端错误）".to_string()),
+            _ => {} // still processing
         }
     }
 
-    Err("bcut 转录超时（超过 120 秒）".to_string())
+    Err("bcut 转录超时（超过 240 秒）".to_string())
 }
 
-/// Parse bcut result value into subtitle items.
-/// `result` may be a JSON object or a JSON-encoded string.
+/// Parse bcut rubick-interface result: `data.result` is a JSON string containing `utterances[]`.
 fn parse_bcut_result(result: &serde_json::Value) -> Result<Vec<SubtitleItem>, String> {
     let obj = if result.is_string() {
         serde_json::from_str::<serde_json::Value>(result.as_str().unwrap())
@@ -332,66 +474,41 @@ fn parse_bcut_result(result: &serde_json::Value) -> Result<Vec<SubtitleItem>, St
         result.clone()
     };
 
-    let lines = obj["body"]["lines"]
+    let utterances = obj["utterances"]
         .as_array()
-        .ok_or_else(|| "bcut result 缺少 body.lines".to_string())?;
+        .ok_or_else(|| "bcut result 缺少 utterances".to_string())?;
 
-    let mut subtitles: Vec<SubtitleItem> = Vec::new();
-    let mut id = 1u32;
-
-    for line in lines {
-        // Primary: lines[].wordsResult[].words[]
-        if let Some(words_results) = line["wordsResult"].as_array() {
-            for wr in words_results {
-                if let Some(words) = wr["words"].as_array() {
-                    if words.is_empty() {
-                        continue;
-                    }
-                    let start_ms = parse_bcut_time(&words[0]["startTime"]);
-                    let end_ms = parse_bcut_time(&words[words.len() - 1]["endTime"]);
-                    let text: String = words
-                        .iter()
-                        .filter_map(|w| w["content"].as_str())
-                        .collect();
-                    if !text.is_empty() {
-                        subtitles.push(SubtitleItem {
-                            id,
-                            start_time: start_ms as f64 / 1000.0,
-                            end_time: end_ms as f64 / 1000.0,
-                            text,
-                        });
-                        id += 1;
-                    }
-                }
-            }
-        } else if let Some(words) = line["words"].as_array() {
-            // Fallback: lines[].words[]
-            if words.is_empty() {
-                continue;
-            }
-            let start_ms = parse_bcut_time(&words[0]["startTime"]);
-            let end_ms = parse_bcut_time(&words[words.len() - 1]["endTime"]);
-            let text: String = words.iter().filter_map(|w| w["content"].as_str()).collect();
-            if !text.is_empty() {
-                subtitles.push(SubtitleItem {
-                    id,
-                    start_time: start_ms as f64 / 1000.0,
-                    end_time: end_ms as f64 / 1000.0,
-                    text,
-                });
-                id += 1;
-            }
+    let mut subtitles = Vec::new();
+    for (idx, u) in utterances.iter().enumerate() {
+        let text = u["transcript"].as_str().unwrap_or("").to_string();
+        if text.is_empty() {
+            continue;
         }
+        let start_ms = u["start_time"].as_u64().unwrap_or(0);
+        let end_ms = u["end_time"].as_u64().unwrap_or(0);
+        subtitles.push(SubtitleItem {
+            id: (idx + 1) as u32,
+            start_time: start_ms as f64 / 1000.0,
+            end_time: end_ms as f64 / 1000.0,
+            text,
+        });
     }
 
     Ok(subtitles)
 }
 
-/// Extract milliseconds from a bcut time value (may be u64 or string).
-fn parse_bcut_time(v: &serde_json::Value) -> u64 {
-    v.as_u64()
-        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-        .unwrap_or(0)
+/// Opens a native file picker dialog and returns the selected video file's absolute path,
+/// or `None` if the user cancelled.
+#[tauri::command]
+pub async fn cmd_pick_video_file() -> Result<Option<String>, String> {
+    let file = rfd::AsyncFileDialog::new()
+        .add_filter(
+            "视频文件",
+            &["mp4", "mov", "avi", "mkv", "webm", "flv", "wmv", "ts", "m4v"],
+        )
+        .pick_file()
+        .await;
+    Ok(file.map(|f| f.path().to_string_lossy().into_owned()))
 }
 
 // ─── 5. Save subtitles to disk ───────────────────────────────────────────────────

@@ -6,20 +6,15 @@ import { setConfig, getProviderSecret, setProviderSecret } from './useDatabase'
 const defaults: TranscriptionSettings = {
   activeProviderId: 'bcut',
   configs: {
-    bcut: {
-      language: 'auto',
-      needWordTimestamp: false,
-    },
+    bcut: {} as Record<string, never>,
     'elevenlabs-free': {
       modelId: 'scribe_v2',
-      language: 'auto',
       numSpeakers: 0,
       tagAudioEvents: false,
     },
     'elevenlabs-paid': {
       apiKey: '',
       modelId: 'scribe_v2',
-      language: 'auto',
       numSpeakers: 0,
       enableDiarization: false,
       tagAudioEvents: false,

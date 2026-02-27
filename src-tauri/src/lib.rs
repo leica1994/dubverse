@@ -72,6 +72,7 @@ pub fn run() {
             commands::transcribe::cmd_transcribe_elevenlabs,
             commands::transcribe::cmd_transcribe_bcut,
             commands::transcribe::cmd_save_subtitles,
+            commands::transcribe::cmd_pick_video_file,
         ])
         .setup(|app| {
             // Resolve data directory: {exe_dir}/dubverse_data/

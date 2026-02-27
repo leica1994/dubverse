@@ -44,7 +44,7 @@ async function startProcessing() {
 
     // Step 2: Extract audio into cache dir
     progress.value = { phase: '提取音频', percent: 10, message: '提取音频中...' }
-    const audioPath = cacheDir + '/audio.wav'
+    const audioPath = cacheDir + '/audio.mp3'
     await invoke('cmd_extract_audio', {
       videoPath: videoFile.value.path,
       outputPath: audioPath,
@@ -58,10 +58,9 @@ async function startProcessing() {
     let subtitlesJson: string
 
     if (providerId === 'bcut') {
-      const cfg = transcriptionSettings.value.configs.bcut
       subtitlesJson = await invoke<string>('cmd_transcribe_bcut', {
         audioPath,
-        language: cfg.language,
+        language: sourceLanguage.value,
       })
     } else {
       const isPaid = providerId === 'elevenlabs-paid'
@@ -71,9 +70,12 @@ async function startProcessing() {
       subtitlesJson = await invoke<string>('cmd_transcribe_elevenlabs', {
         audioPath,
         modelId: cfg.modelId,
-        language: cfg.language,
+        language: sourceLanguage.value,
         numSpeakers: cfg.numSpeakers,
         tagAudioEvents: cfg.tagAudioEvents,
+        enableDiarization: isPaid
+          ? transcriptionSettings.value.configs['elevenlabs-paid'].enableDiarization
+          : false,
         apiKey: isPaid ? transcriptionSettings.value.configs['elevenlabs-paid'].apiKey : '',
       })
     }

@@ -1,14 +1,9 @@
 export type TranscriptionProviderId = 'bcut' | 'elevenlabs-free' | 'elevenlabs-paid'
-export type TranscriptionLanguage = 'auto' | 'zh' | 'en' | 'ja' | 'ko' | 'es' | 'fr' | 'de' | 'ru'
 
-export interface BcutConfig {
-  language: TranscriptionLanguage
-  needWordTimestamp: boolean
-}
+export type BcutConfig = Record<string, never>
 
 export interface ElevenLabsFreeConfig {
   modelId: 'scribe_v2' | 'scribe_v1'
-  language: TranscriptionLanguage
   numSpeakers: number
   tagAudioEvents: boolean
 }
@@ -16,7 +11,6 @@ export interface ElevenLabsFreeConfig {
 export interface ElevenLabsPaidConfig {
   apiKey: string
   modelId: 'scribe_v2' | 'scribe_v1'
-  language: TranscriptionLanguage
   numSpeakers: number
   enableDiarization: boolean
   tagAudioEvents: boolean

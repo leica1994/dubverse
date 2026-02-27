@@ -7,7 +7,7 @@ import { STEP_LABELS } from '@/types/workbench'
 const currentStep = ref(0)
 const stepStatuses = ref<StepStatus[]>(['ready', 'idle', 'idle', 'idle', 'idle', 'idle'])
 const videoFile = ref<VideoFile | null>(null)
-const sourceLanguage = ref('zh')
+const sourceLanguage = ref('auto')
 const targetLanguage = ref('en')
 const originalSubtitles = ref<Subtitle[]>([])
 const translatedSubtitles = ref<Subtitle[]>([])
@@ -77,7 +77,7 @@ function resetWorkbench() {
   currentStep.value = 0
   stepStatuses.value = ['ready', 'idle', 'idle', 'idle', 'idle', 'idle']
   videoFile.value = null
-  sourceLanguage.value = 'zh'
+  sourceLanguage.value = 'auto'
   targetLanguage.value = 'en'
   originalSubtitles.value = []
   translatedSubtitles.value = []
