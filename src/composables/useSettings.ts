@@ -1,32 +1,23 @@
 import { ref, watch } from 'vue'
+import { setConfig } from './useDatabase'
 
 type Theme = 'dark' | 'light' | 'system'
 
 interface AppSettings {
   theme: Theme
   closeToTray: boolean
+  sidebarCollapsed: boolean
 }
-
-const STORAGE_KEY = 'dubverse-settings'
 
 const defaults: AppSettings = {
   theme: 'dark',
   closeToTray: false,
+  sidebarCollapsed: false,
 }
 
-function loadSettings(): AppSettings {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return { ...defaults, ...JSON.parse(raw) }
-  } catch { /* ignore */ }
-  return { ...defaults }
-}
+const settings = ref<AppSettings>({ ...defaults })
+const isLoaded = ref(false)
 
-function saveSettings(s: AppSettings) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
-}
-
-const settings = ref<AppSettings>(loadSettings())
 let mediaQuery: MediaQueryList | null = null
 let mediaHandler: ((e: MediaQueryListEvent) => void) | null = null
 
@@ -72,13 +63,36 @@ function setCloseToTray(value: boolean) {
   settings.value.closeToTray = value
 }
 
-watch(settings, (val) => saveSettings(val), { deep: true })
+function setSidebarCollapsed(value: boolean) {
+  settings.value.sidebarCollapsed = value
+}
+
+export async function initSettings(dbConfig: Record<string, string>) {
+  settings.value = {
+    theme: (dbConfig['ui.theme'] as Theme) ?? defaults.theme,
+    closeToTray: dbConfig['system.close_to_tray'] === 'true',
+    sidebarCollapsed: dbConfig['ui.sidebar_collapsed'] === 'true',
+  }
+  isLoaded.value = true
+}
+
+watch(
+  settings,
+  async (val) => {
+    if (!isLoaded.value) return
+    await setConfig('ui.theme', val.theme)
+    await setConfig('system.close_to_tray', String(val.closeToTray))
+    await setConfig('ui.sidebar_collapsed', String(val.sidebarCollapsed))
+  },
+  { deep: true },
+)
 
 export function useSettings() {
   return {
     settings,
     setTheme,
     setCloseToTray,
+    setSidebarCollapsed,
     applyTheme,
   }
 }

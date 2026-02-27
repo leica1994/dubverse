@@ -1,77 +1,108 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { useWorkbench } from '@/composables/useWorkbench'
+import { useTranscriptionSettings } from '@/composables/useTranscriptionSettings'
 import { LANGUAGES } from '@/types/workbench'
-import type { Subtitle } from '@/types/workbench'
 import ProgressBar from './ProgressBar.vue'
 
 const {
-  sourceLanguage, stepStatuses, setStepStatus,
-  originalSubtitles, progress,
+  videoFile, sourceLanguage, stepStatuses, setStepStatus,
+  originalSubtitles, progress, projectDir,
 } = useWorkbench()
 
+const { activeProvider, transcriptionSettings, validateActive } = useTranscriptionSettings()
+
 const showAdvanced = ref(false)
-const transcribeModel = ref('whisper-large-v3')
+const errorMessage = ref('')
 
 let cancelFlag = false
 
-function startProcessing() {
+async function startProcessing() {
+  const result = validateActive()
+  if (!result.valid) {
+    errorMessage.value = Object.values(result.errors)[0] ?? '配置校验失败，请检查设置'
+    return
+  }
+  if (!videoFile.value) {
+    errorMessage.value = '请先上传视频文件'
+    return
+  }
+
+  errorMessage.value = ''
   cancelFlag = false
   setStepStatus(1, 'processing')
 
-  const phases = [
-    { phase: '音频提取', duration: 1500 },
-    { phase: '语音转录', duration: 2500 },
-  ]
+  try {
+    // Step 1: Create project & cache directories
+    progress.value = { phase: '初始化', percent: 5, message: '创建项目目录...' }
+    const stem = videoFile.value.name.replace(/\.[^.]+$/, '')
+    const { projectDir: dir, cacheDir } = await invoke<{ projectDir: string; cacheDir: string }>(
+      'cmd_create_project_dir', { videoStem: stem }
+    )
+    projectDir.value = dir
 
-  let phaseIndex = 0
-  let elapsed = 0
-  const totalDuration = phases.reduce((s, p) => s + p.duration, 0)
+    // Step 2: Extract audio into cache dir
+    progress.value = { phase: '提取音频', percent: 10, message: '提取音频中...' }
+    const audioPath = cacheDir + '/audio.wav'
+    await invoke('cmd_extract_audio', {
+      videoPath: videoFile.value.path,
+      outputPath: audioPath,
+    })
 
-  const interval = setInterval(() => {
-    if (cancelFlag) {
-      clearInterval(interval)
-      setStepStatus(1, 'ready')
-      progress.value = { phase: '', percent: 0, message: '' }
-      return
+    if (cancelFlag) { resetToReady(); return }
+    progress.value = { phase: '转录', percent: 40, message: '上传并转录中...' }
+
+    // Step 3: Transcribe
+    const providerId = transcriptionSettings.value.activeProviderId
+    let subtitlesJson: string
+
+    if (providerId === 'bcut') {
+      const cfg = transcriptionSettings.value.configs.bcut
+      subtitlesJson = await invoke<string>('cmd_transcribe_bcut', {
+        audioPath,
+        language: cfg.language,
+      })
+    } else {
+      const isPaid = providerId === 'elevenlabs-paid'
+      const cfg = isPaid
+        ? transcriptionSettings.value.configs['elevenlabs-paid']
+        : transcriptionSettings.value.configs['elevenlabs-free']
+      subtitlesJson = await invoke<string>('cmd_transcribe_elevenlabs', {
+        audioPath,
+        modelId: cfg.modelId,
+        language: cfg.language,
+        numSpeakers: cfg.numSpeakers,
+        tagAudioEvents: cfg.tagAudioEvents,
+        apiKey: isPaid ? transcriptionSettings.value.configs['elevenlabs-paid'].apiKey : '',
+      })
     }
 
-    elapsed += 50
-    let acc = 0
-    for (let i = 0; i < phases.length; i++) {
-      acc += phases[i].duration
-      if (elapsed <= acc) { phaseIndex = i; break }
-    }
+    if (cancelFlag) { resetToReady(); return }
+    progress.value = { phase: '保存', percent: 85, message: '处理字幕...' }
 
-    const pct = Math.min(100, (elapsed / totalDuration) * 100)
-    progress.value = {
-      phase: phases[phaseIndex].phase,
-      percent: pct,
-      message: `${phases[phaseIndex].phase}中...`,
-    }
+    // Step 4: Save subtitles and clean up cache
+    await invoke('cmd_save_subtitles', { projectDir: dir, cacheDir, subtitlesJson })
 
-    if (elapsed >= totalDuration) {
-      clearInterval(interval)
-      generateMockSubtitles()
-      setStepStatus(1, 'completed')
-      progress.value = { phase: '', percent: 100, message: '' }
-    }
-  }, 50)
+    // Done
+    originalSubtitles.value = JSON.parse(subtitlesJson)
+    setStepStatus(1, 'completed')
+    progress.value = { phase: '', percent: 100, message: '' }
+
+  } catch (err) {
+    setStepStatus(1, 'ready')
+    errorMessage.value = String(err)
+    progress.value = { phase: '', percent: 0, message: '' }
+  }
 }
 
 function cancelProcessing() {
   cancelFlag = true
 }
 
-function generateMockSubtitles() {
-  const mockOriginal: Subtitle[] = [
-    { id: 1, startTime: 0, endTime: 3.2, text: '欢迎来到我们的频道' },
-    { id: 2, startTime: 3.5, endTime: 6.8, text: '今天我们要讨论一个有趣的话题' },
-    { id: 3, startTime: 7.1, endTime: 10.5, text: '关于人工智能在视频制作中的应用' },
-    { id: 4, startTime: 11.0, endTime: 14.2, text: '让我们开始吧' },
-    { id: 5, startTime: 15.0, endTime: 18.5, text: '首先我们来看一下基本概念' },
-  ]
-  originalSubtitles.value = mockOriginal
+function resetToReady() {
+  setStepStatus(1, 'ready')
+  progress.value = { phase: '', percent: 0, message: '' }
 }
 </script>
 
@@ -91,15 +122,16 @@ function generateMockSubtitles() {
       </button>
 
       <div v-if="showAdvanced" class="advanced-options">
-        <div class="field">
-          <label class="field-label">转录模型</label>
-          <select v-model="transcribeModel" class="select">
-            <option value="whisper-large-v3">Whisper Large V3</option>
-            <option value="whisper-medium">Whisper Medium</option>
-            <option value="whisper-small">Whisper Small</option>
-          </select>
+        <div class="active-provider-hint">
+          <div class="active-provider-info">
+            <span class="active-provider-name">{{ activeProvider.name }}</span>
+            <span class="active-provider-desc">{{ activeProvider.description }}</span>
+          </div>
+          <router-link to="/settings" class="go-settings-link">在设置中更改 →</router-link>
         </div>
       </div>
+
+      <p v-if="errorMessage" class="validation-error">{{ errorMessage }}</p>
 
       <button class="btn btn--primary" @click="startProcessing">开始转录</button>
     </div>
@@ -186,6 +218,54 @@ function generateMockSubtitles() {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* Active provider hint */
+.active-provider-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.active-provider-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.active-provider-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.active-provider-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.go-settings-link {
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.go-settings-link:hover {
+  text-decoration: underline;
+}
+
+.validation-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--status-error);
+  padding: 10px 14px;
+  background: var(--status-error-subtle, rgba(239, 68, 68, 0.08));
+  border: 1px solid var(--status-error);
+  border-radius: 8px;
 }
 
 .progress-panel {

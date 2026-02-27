@@ -14,6 +14,7 @@ const translatedSubtitles = ref<Subtitle[]>([])
 const ttsConfig = ref<TTSConfig>({ voiceId: '', speed: 1.0, pitch: 1.0 })
 const exportConfig = ref<ExportConfig>({ format: 'mp4', quality: 'high', outputPath: '' })
 const progress = ref<ProgressInfo>({ phase: '', percent: 0, message: '' })
+const projectDir = ref<string>('')
 
 const isProcessing = computed(() => stepStatuses.value.some((s: StepStatus) => s === 'processing'))
 
@@ -83,6 +84,7 @@ function resetWorkbench() {
   ttsConfig.value = { voiceId: '', speed: 1.0, pitch: 1.0 }
   exportConfig.value = { format: 'mp4', quality: 'high', outputPath: '' }
   progress.value = { phase: '', percent: 0, message: '' }
+  projectDir.value = ''
 }
 
 export function useWorkbench() {
@@ -97,6 +99,7 @@ export function useWorkbench() {
     ttsConfig,
     exportConfig,
     progress,
+    projectDir,
     isProcessing,
     canGoNext,
     canGoPrev,

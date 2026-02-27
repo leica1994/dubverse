@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed } from 'vue'
+import { useSettings } from '@/composables/useSettings'
 import SidebarItem from './SidebarItem.vue'
 import IconFolder from '../icons/IconFolder.vue'
 import IconFilm from '../icons/IconFilm.vue'
@@ -8,16 +9,11 @@ import IconSettings from '../icons/IconSettings.vue'
 import IconMenu from '../icons/IconMenu.vue'
 import IconChevronRight from '../icons/IconChevronRight.vue'
 
-const STORAGE_KEY = 'dubverse-sidebar-collapsed'
-
-const collapsed = ref(localStorage.getItem(STORAGE_KEY) === 'true')
-
-watch(collapsed, (val) => {
-  localStorage.setItem(STORAGE_KEY, String(val))
-})
+const { settings, setSidebarCollapsed } = useSettings()
+const collapsed = computed(() => settings.value.sidebarCollapsed)
 
 function toggle() {
-  collapsed.value = !collapsed.value
+  setSidebarCollapsed(!collapsed.value)
 }
 </script>
 
