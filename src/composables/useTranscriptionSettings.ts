@@ -16,7 +16,7 @@ const defaults: TranscriptionSettings = {
       apiKey: '',
       modelId: 'scribe_v2',
       numSpeakers: 0,
-      enableDiarization: false,
+      enableDiarization: true,
       tagAudioEvents: false,
     },
   },

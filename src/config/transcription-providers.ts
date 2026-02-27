@@ -71,7 +71,7 @@ const elevenLabsPaidProvider: TranscriptionProvider<'elevenlabs-paid'> = {
     apiKey: '',
     modelId: 'scribe_v2',
     numSpeakers: 0,
-    enableDiarization: false,
+    enableDiarization: true,
     tagAudioEvents: false,
   },
   configSchema: [
@@ -102,7 +102,7 @@ const elevenLabsPaidProvider: TranscriptionProvider<'elevenlabs-paid'> = {
       key: 'enableDiarization',
       label: '说话人分离',
       type: 'toggle',
-      hint: '区分不同说话人，在字幕中标注说话人标签',
+      hint: '识别并区分多位说话人，提升多人场景的转录准确率',
     },
     {
       key: 'tagAudioEvents',
