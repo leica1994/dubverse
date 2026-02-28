@@ -1,9 +1,24 @@
 <script setup lang="ts">
 import type { StepStatus } from '@/types/workbench'
 import { STEP_LABELS } from '@/types/workbench'
+import IconUpload from '@/components/icons/IconUpload.vue'
+import IconMic from '@/components/icons/IconMic.vue'
+import IconLanguage from '@/components/icons/IconLanguage.vue'
 import IconCheck from '@/components/icons/IconCheck.vue'
+import IconVolume from '@/components/icons/IconVolume.vue'
+import IconDownload from '@/components/icons/IconDownload.vue'
 import IconLoader from '@/components/icons/IconLoader.vue'
 import IconAlertCircle from '@/components/icons/IconAlertCircle.vue'
+
+const STEP_ICONS = [IconUpload, IconMic, IconLanguage, IconCheck, IconVolume, IconDownload]
+
+const STATUS_LABELS: Record<StepStatus, string> = {
+  idle: '等待中',
+  ready: '已就绪',
+  processing: '进行中',
+  completed: '已完成',
+  error: '错误',
+}
 
 const props = defineProps<{
   currentStep: number
@@ -26,142 +41,205 @@ function onStepClick(index: number) {
 </script>
 
 <template>
-  <div class="step-indicator">
-    <div
-      v-for="(label, i) in STEP_LABELS"
-      :key="i"
-      class="step-indicator__item"
-      :class="{ 'step-indicator__item--clickable': isClickable(statuses[i]) }"
-      @click="onStepClick(i)"
-    >
+  <div class="step-panel">
+    <template v-for="(label, i) in STEP_LABELS" :key="i">
       <div
-        v-if="i > 0"
-        class="step-indicator__line"
-        :class="{ 'step-indicator__line--done': statuses[i - 1] === 'completed' }"
-      />
-      <div
-        class="step-indicator__node"
+        class="step-item"
         :class="{
-          'step-indicator__node--active': i === currentStep,
-          'step-indicator__node--completed': statuses[i] === 'completed',
-          'step-indicator__node--processing': statuses[i] === 'processing',
-          'step-indicator__node--error': statuses[i] === 'error',
-          'step-indicator__node--idle': statuses[i] === 'idle',
+          'step-item--active': i === currentStep,
+          'step-item--completed': statuses[i] === 'completed',
+          'step-item--processing': statuses[i] === 'processing',
+          'step-item--error': statuses[i] === 'error',
+          'step-item--ready': statuses[i] === 'ready' && i !== currentStep,
+          'step-item--idle': statuses[i] === 'idle' && i !== currentStep,
+          'step-item--clickable': isClickable(statuses[i]),
         }"
+        @click="onStepClick(i)"
       >
-        <IconCheck v-if="statuses[i] === 'completed'" class="step-indicator__icon" />
-        <IconLoader v-else-if="statuses[i] === 'processing'" class="step-indicator__icon" />
-        <IconAlertCircle v-else-if="statuses[i] === 'error'" class="step-indicator__icon" />
-        <span v-else class="step-indicator__num">{{ i + 1 }}</span>
+        <div class="step-item__icon-wrap">
+          <IconCheck v-if="statuses[i] === 'completed'" class="step-item__icon" />
+          <IconLoader v-else-if="statuses[i] === 'processing'" class="step-item__icon step-item__icon--spin" />
+          <IconAlertCircle v-else-if="statuses[i] === 'error'" class="step-item__icon" />
+          <component :is="STEP_ICONS[i]" v-else class="step-item__icon" />
+        </div>
+
+        <div class="step-item__text">
+          <span class="step-item__name">{{ label }}</span>
+          <span class="step-item__status">{{ STATUS_LABELS[statuses[i]] }}</span>
+        </div>
       </div>
-      <span
-        class="step-indicator__label"
-        :class="{ 'step-indicator__label--active': i === currentStep }"
-      >{{ label }}</span>
-    </div>
+
+      <div
+        v-if="i < STEP_LABELS.length - 1"
+        class="step-connector"
+        :class="{ 'step-connector--done': statuses[i] === 'completed' }"
+      />
+    </template>
   </div>
 </template>
 
 <style scoped>
-.step-indicator {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 16px 0 20px;
-  user-select: none;
-}
-
-.step-indicator__item {
+.step-panel {
+  width: 176px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  position: relative;
-  flex: 1;
-  max-width: 160px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-elevated);
+  overflow-y: auto;
+  overflow-x: hidden;
+  user-select: none;
+  padding: 20px 0;
 }
 
-.step-indicator__item--clickable {
+/* ── Step item ─────────────────────────────────────────────────────────── */
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  height: 56px;
+  flex-shrink: 0;
+  border-left: 3px solid transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.step-item--active {
+  border-left-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.step-item--processing:not(.step-item--active) {
+  border-left-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.step-item--error {
+  border-left-color: var(--status-error);
+}
+
+.step-item--idle {
+  opacity: 0.5;
+}
+
+.step-item--clickable {
   cursor: pointer;
 }
 
-.step-indicator__line {
-  position: absolute;
-  top: calc(var(--step-node-size) / 2);
-  right: 50%;
-  width: 100%;
-  height: 2px;
-  background: var(--border);
-  z-index: 0;
-  transform: translateX(-50%);
+.step-item--clickable:hover:not(.step-item--active) {
+  background: var(--bg-hover);
 }
 
-.step-indicator__line--done {
-  background: var(--status-success);
-}
+/* ── Icon circle ───────────────────────────────────────────────────────── */
 
-.step-indicator__node {
-  width: var(--step-node-size);
-  height: var(--step-node-size);
+.step-item__icon-wrap {
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--border);
-  background: var(--bg-elevated);
-  position: relative;
-  z-index: 1;
-  transition: all 0.15s ease;
+  flex-shrink: 0;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  transition: background 0.18s ease, color 0.18s ease;
 }
 
-.step-indicator__node--active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-subtle);
-}
-
-.step-indicator__node--completed {
-  border-color: var(--status-success);
-  background: var(--status-success);
-  color: #fff;
-}
-
-.step-indicator__node--processing {
-  border-color: var(--accent);
+.step-item--active .step-item__icon-wrap {
+  background: var(--accent-subtle);
   color: var(--accent);
 }
 
-.step-indicator__node--error {
-  border-color: var(--status-error);
+.step-item--processing .step-item__icon-wrap {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.step-item--completed .step-item__icon-wrap {
+  background: var(--status-success-subtle);
+  color: var(--status-success);
+}
+
+.step-item--error .step-item__icon-wrap {
+  background: var(--status-error-subtle);
   color: var(--status-error);
 }
 
-.step-indicator__node--idle {
-  opacity: 0.5;
+.step-item__icon {
+  width: 14px;
+  height: 14px;
 }
 
-.step-indicator__icon {
-  width: 16px;
-  height: 16px;
+.step-item__icon--spin {
+  animation: spin 1.2s linear infinite;
 }
 
-.step-indicator__num {
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── Text block ────────────────────────────────────────────────────────── */
+
+.step-item__text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.step-item__name {
   font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.step-indicator__node--active .step-indicator__num {
-  color: var(--accent);
-}
-
-.step-indicator__label {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.step-indicator__label--active {
-  color: var(--text-primary);
   font-weight: 500;
+  color: var(--text-secondary);
+  line-height: 1.2;
+  transition: color 0.15s ease, font-weight 0.15s ease;
+}
+
+.step-item--active .step-item__name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.step-item__status {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.step-item--processing .step-item__status {
+  color: var(--accent);
+  animation: pulse-text 1.5s ease-in-out infinite;
+}
+
+.step-item--completed .step-item__status {
+  color: var(--status-success);
+}
+
+.step-item--error .step-item__status {
+  color: var(--status-error);
+}
+
+@keyframes pulse-text {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+
+/* ── Connector line ────────────────────────────────────────────────────── */
+
+.step-connector {
+  /* 16px padding-left + 14px (half of 28px icon) - 1px (half of 2px line) = 29px */
+  margin-left: 29px;
+  width: 2px;
+  height: 16px;
+  background: var(--border);
+  flex-shrink: 0;
+  border-radius: 1px;
+  transition: background 0.2s ease;
+}
+
+.step-connector--done {
+  background: var(--status-success);
 }
 </style>
