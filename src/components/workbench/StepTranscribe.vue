@@ -9,7 +9,7 @@ import SubtitleRow from './SubtitleRow.vue'
 
 const {
   videoFile, sourceLanguage, stepStatuses, setStepStatus,
-  originalSubtitles, progress, projectDir,
+  originalSubtitles, progress, projectDir, workbenchTaskId, createTask, saveProgress,
 } = useWorkbench()
 
 const { activeProvider, transcriptionSettings, validateActive } = useTranscriptionSettings()
@@ -42,6 +42,7 @@ async function startProcessing() {
       'cmd_create_project_dir', { videoStem: stem }
     )
     projectDir.value = dir
+    await createTask()
 
     // Step 2: Extract audio into cache dir
     progress.value = { phase: '提取音频', percent: 10, message: '提取音频中...' }
@@ -89,7 +90,17 @@ async function startProcessing() {
 
     // Done
     originalSubtitles.value = JSON.parse(subtitlesJson)
+    await invoke('cmd_save_transcribe_step', {
+      taskId: workbenchTaskId.value,
+      configJson: JSON.stringify({
+        providerId: transcriptionSettings.value.activeProviderId,
+        sourceLanguage: sourceLanguage.value,
+      }),
+      subtitlesPath: `${dir}/subtitles.json`,
+      subtitleCount: originalSubtitles.value.length,
+    }).catch(() => {})
     setStepStatus(1, 'completed')
+    await saveProgress()
     progress.value = { phase: '', percent: 100, message: '' }
 
   } catch (err) {

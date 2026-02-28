@@ -532,3 +532,235 @@ pub fn delete_tts_plugin(conn: &Connection, id: &str) -> Result<()> {
     conn.execute("DELETE FROM tts_plugins WHERE id=?1", [id])?;
     Ok(())
 }
+
+// ── Workbench Tasks ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkbenchTask {
+    pub id: String,
+    pub name: String,
+    pub project_dir: String,
+    pub video_path: String,
+    pub video_name: String,
+    pub video_size: i64,
+    pub video_duration: f64,
+    pub video_width: i32,
+    pub video_height: i32,
+    pub current_step: i32,
+    pub step_statuses: String,
+    pub source_language: String,
+    pub target_language: String,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkbenchStepTranscribe {
+    pub task_id: String,
+    pub config_json: String,
+    pub subtitles_path: Option<String>,
+    pub subtitle_count: i32,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkbenchStepTranslate {
+    pub task_id: String,
+    pub config_json: String,
+    pub translated_subtitles_path: Option<String>,
+    pub subtitle_count: i32,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkbenchTaskFull {
+    pub id: String,
+    pub name: String,
+    pub project_dir: String,
+    pub video_path: String,
+    pub video_name: String,
+    pub video_size: i64,
+    pub video_duration: f64,
+    pub video_width: i32,
+    pub video_height: i32,
+    pub current_step: i32,
+    pub step_statuses: String,
+    pub source_language: String,
+    pub target_language: String,
+    pub status: String,
+    pub created_at: String,
+    pub step_transcribe: Option<WorkbenchStepTranscribe>,
+    pub step_translate: Option<WorkbenchStepTranslate>,
+}
+
+pub fn create_workbench_task(conn: &Connection, task: &WorkbenchTask) -> Result<()> {
+    conn.execute(
+        "INSERT INTO workbench_tasks
+         (id, name, project_dir, video_path, video_name, video_size, video_duration,
+          video_width, video_height, current_step, step_statuses,
+          source_language, target_language, status, created_at, updated_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
+        rusqlite::params![
+            task.id, task.name, task.project_dir, task.video_path, task.video_name,
+            task.video_size, task.video_duration, task.video_width, task.video_height,
+            task.current_step, task.step_statuses, task.source_language, task.target_language,
+            task.status, task.created_at, task.updated_at,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn update_workbench_task_progress(
+    conn: &Connection,
+    id: &str,
+    current_step: i32,
+    step_statuses: &str,
+    source_language: &str,
+    target_language: &str,
+    status: &str,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE workbench_tasks
+         SET current_step=?2, step_statuses=?3, source_language=?4, target_language=?5,
+             status=?6, updated_at=datetime('now')
+         WHERE id=?1",
+        rusqlite::params![id, current_step, step_statuses, source_language, target_language, status],
+    )?;
+    Ok(())
+}
+
+pub fn list_workbench_tasks(conn: &Connection) -> Result<Vec<WorkbenchTask>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, project_dir, video_path, video_name, video_size, video_duration,
+                video_width, video_height, current_step, step_statuses,
+                source_language, target_language, status, created_at, updated_at
+         FROM workbench_tasks ORDER BY created_at DESC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(WorkbenchTask {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            project_dir: row.get(2)?,
+            video_path: row.get(3)?,
+            video_name: row.get(4)?,
+            video_size: row.get(5)?,
+            video_duration: row.get(6)?,
+            video_width: row.get(7)?,
+            video_height: row.get(8)?,
+            current_step: row.get(9)?,
+            step_statuses: row.get(10)?,
+            source_language: row.get(11)?,
+            target_language: row.get(12)?,
+            status: row.get(13)?,
+            created_at: row.get(14)?,
+            updated_at: row.get(15)?,
+        })
+    })?;
+    let mut result = Vec::new();
+    for r in rows { result.push(r?); }
+    Ok(result)
+}
+
+pub fn get_workbench_task_full(conn: &Connection, task_id: &str) -> Result<Option<WorkbenchTaskFull>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, project_dir, video_path, video_name, video_size, video_duration,
+                video_width, video_height, current_step, step_statuses,
+                source_language, target_language, status, created_at
+         FROM workbench_tasks WHERE id=?1",
+    )?;
+    let mut rows = stmt.query([task_id])?;
+    let task = match rows.next()? {
+        Some(row) => WorkbenchTaskFull {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            project_dir: row.get(2)?,
+            video_path: row.get(3)?,
+            video_name: row.get(4)?,
+            video_size: row.get(5)?,
+            video_duration: row.get(6)?,
+            video_width: row.get(7)?,
+            video_height: row.get(8)?,
+            current_step: row.get(9)?,
+            step_statuses: row.get(10)?,
+            source_language: row.get(11)?,
+            target_language: row.get(12)?,
+            status: row.get(13)?,
+            created_at: row.get(14)?,
+            step_transcribe: None,
+            step_translate: None,
+        },
+        None => return Ok(None),
+    };
+
+    let mut full = task;
+
+    // Load transcribe step
+    let mut st_stmt = conn.prepare(
+        "SELECT task_id, config_json, subtitles_path, subtitle_count, completed_at
+         FROM workbench_step_transcribe WHERE task_id=?1",
+    )?;
+    let mut st_rows = st_stmt.query([task_id])?;
+    if let Some(row) = st_rows.next()? {
+        full.step_transcribe = Some(WorkbenchStepTranscribe {
+            task_id: row.get(0)?,
+            config_json: row.get(1)?,
+            subtitles_path: row.get(2)?,
+            subtitle_count: row.get(3)?,
+            completed_at: row.get(4)?,
+        });
+    }
+
+    // Load translate step
+    let mut tr_stmt = conn.prepare(
+        "SELECT task_id, config_json, translated_subtitles_path, subtitle_count, completed_at
+         FROM workbench_step_translate WHERE task_id=?1",
+    )?;
+    let mut tr_rows = tr_stmt.query([task_id])?;
+    if let Some(row) = tr_rows.next()? {
+        full.step_translate = Some(WorkbenchStepTranslate {
+            task_id: row.get(0)?,
+            config_json: row.get(1)?,
+            translated_subtitles_path: row.get(2)?,
+            subtitle_count: row.get(3)?,
+            completed_at: row.get(4)?,
+        });
+    }
+
+    Ok(Some(full))
+}
+
+pub fn delete_workbench_task(conn: &Connection, task_id: &str) -> Result<()> {
+    conn.execute("DELETE FROM workbench_tasks WHERE id=?1", [task_id])?;
+    Ok(())
+}
+
+pub fn upsert_step_transcribe(conn: &Connection, step: &WorkbenchStepTranscribe) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO workbench_step_transcribe
+         (task_id, config_json, subtitles_path, subtitle_count, completed_at)
+         VALUES (?1,?2,?3,?4,?5)",
+        rusqlite::params![
+            step.task_id, step.config_json, step.subtitles_path,
+            step.subtitle_count, step.completed_at,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn upsert_step_translate(conn: &Connection, step: &WorkbenchStepTranslate) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO workbench_step_translate
+         (task_id, config_json, translated_subtitles_path, subtitle_count, completed_at)
+         VALUES (?1,?2,?3,?4,?5)",
+        rusqlite::params![
+            step.task_id, step.config_json, step.translated_subtitles_path,
+            step.subtitle_count, step.completed_at,
+        ],
+    )?;
+    Ok(())
+}

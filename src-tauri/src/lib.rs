@@ -105,6 +105,15 @@ pub fn run() {
             commands::tts_plugin::cmd_list_tts_voices,
             commands::tts_plugin::cmd_list_ncn_voices,
             commands::tts_plugin::cmd_test_tts_plugin,
+            // Workbench tasks
+            commands::workbench::cmd_create_workbench_task,
+            commands::workbench::cmd_update_workbench_task_progress,
+            commands::workbench::cmd_save_transcribe_step,
+            commands::workbench::cmd_save_translate_step,
+            commands::workbench::cmd_load_subtitles,
+            commands::workbench::cmd_list_workbench_tasks,
+            commands::workbench::cmd_get_workbench_task_full,
+            commands::workbench::cmd_delete_workbench_task,
         ])
         .setup(|app| {
             // Resolve data directory: {exe_dir}/dubverse_data/

@@ -13,7 +13,7 @@ import SubtitleEditor from './SubtitleEditor.vue'
 
 const {
   targetLanguage, sourceLanguage, stepStatuses, setStepStatus,
-  originalSubtitles, translatedSubtitles, progress, projectDir,
+  originalSubtitles, translatedSubtitles, progress, projectDir, workbenchTaskId, saveProgress,
 } = useWorkbench()
 
 const { translationSettings } = useTranslationSettings()
@@ -127,7 +127,28 @@ async function startTranslation() {
       promptOptimize: ts.promptOptimize,
     })
     translatedSubtitles.value = result
+    const defaultAi = aiConfigs.value.find((c) => c.isDefault)
+    await invoke('cmd_save_translate_step', {
+      taskId: workbenchTaskId.value,
+      configJson: JSON.stringify({
+        targetLanguage: targetLanguage.value,
+        aiConfigId: defaultAi?.id ?? '',
+        aiConfigTitle: defaultAi?.title ?? '',
+        correction: ts.correction,
+        optimization: ts.optimization,
+        promptType: ts.promptType,
+        batchSize: ts.batchSize,
+        worldBuilding: ts.worldBuilding,
+        writingStyle: ts.writingStyle,
+        glossary: ts.glossary,
+        forbidden: ts.forbidden,
+      }),
+      translatedSubtitlesPath: `${projectDir.value}/translated_subtitles.json`,
+      subtitlesJson: JSON.stringify(result),
+      subtitleCount: result.length,
+    }).catch(() => {})
     setStepStatus(2, 'completed')
+    await saveProgress()
     progress.value = { phase: '', percent: 100, message: '' }
   } catch (err) {
     const msg = String(err)

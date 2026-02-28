@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import type {
-  StepStatus, VideoFile, Subtitle, TTSConfig, ExportConfig, ProgressInfo,
+  StepStatus, VideoFile, Subtitle, TTSConfig, ExportConfig, ProgressInfo, WorkbenchTaskFull,
 } from '@/types/workbench'
 import { STEP_LABELS } from '@/types/workbench'
 
@@ -17,6 +18,8 @@ const progress = ref<ProgressInfo>({ phase: '', percent: 0, message: '' })
 const projectDir = ref<string>('')
 
 const isProcessing = computed(() => stepStatuses.value.some((s: StepStatus) => s === 'processing'))
+
+const workbenchTaskId = ref<string>('')
 
 const canGoNext = computed(() => {
   const status = stepStatuses.value[currentStep.value]
@@ -85,6 +88,80 @@ function resetWorkbench() {
   exportConfig.value = { format: 'mp4', quality: 'high', outputPath: '' }
   progress.value = { phase: '', percent: 0, message: '' }
   projectDir.value = ''
+  workbenchTaskId.value = ''
+}
+
+async function createTask(): Promise<void> {
+  if (!videoFile.value || !projectDir.value || workbenchTaskId.value) return
+  try {
+    const result = await invoke<{ id: string }>('cmd_create_workbench_task', {
+      videoPath: videoFile.value.path,
+      videoName: videoFile.value.name,
+      videoSize: videoFile.value.size,
+      videoDuration: videoFile.value.duration,
+      videoWidth: videoFile.value.width,
+      videoHeight: videoFile.value.height,
+      projectDir: projectDir.value,
+      sourceLanguage: sourceLanguage.value,
+      targetLanguage: targetLanguage.value,
+    })
+    workbenchTaskId.value = result.id
+  } catch {
+    // 静默失败，不影响主流程
+  }
+}
+
+async function saveProgress(): Promise<void> {
+  if (!workbenchTaskId.value) return
+  try {
+    // Replace any lingering 'processing' state with 'ready' before saving
+    const statuses = stepStatuses.value.map((s) =>
+      s === 'processing' ? 'ready' : s
+    ) as StepStatus[]
+    await invoke('cmd_update_workbench_task_progress', {
+      taskId: workbenchTaskId.value,
+      currentStep: currentStep.value,
+      stepStatuses: statuses,
+      sourceLanguage: sourceLanguage.value,
+      targetLanguage: targetLanguage.value,
+      status: stepStatuses.value[3] === 'completed' ? 'completed' : 'active',
+    })
+  } catch {
+    // 静默失败，不影响主流程
+  }
+}
+
+async function restoreTask(task: WorkbenchTaskFull): Promise<void> {
+  workbenchTaskId.value = task.id
+  projectDir.value = task.projectDir
+  videoFile.value = {
+    name: task.videoName,
+    path: task.videoPath,
+    size: task.videoSize,
+    duration: task.videoDuration,
+    width: task.videoWidth,
+    height: task.videoHeight,
+  }
+  sourceLanguage.value = task.sourceLanguage
+  targetLanguage.value = task.targetLanguage
+  currentStep.value = task.currentStep
+
+  const parsed = JSON.parse(task.stepStatuses) as StepStatus[]
+  // Reset any 'processing' state to 'ready' (app may have been killed mid-task)
+  stepStatuses.value = parsed.map((s) => (s === 'processing' ? 'ready' : s)) as StepStatus[]
+
+  if (task.stepTranscribe?.subtitlesPath) {
+    const json = await invoke<string>('cmd_load_subtitles', {
+      subtitlesPath: task.stepTranscribe.subtitlesPath,
+    }).catch(() => '[]')
+    originalSubtitles.value = JSON.parse(json)
+  }
+  if (task.stepTranslate?.translatedSubtitlesPath) {
+    const json = await invoke<string>('cmd_load_subtitles', {
+      subtitlesPath: task.stepTranslate.translatedSubtitlesPath,
+    }).catch(() => '[]')
+    translatedSubtitles.value = JSON.parse(json)
+  }
 }
 
 export function useWorkbench() {
@@ -100,6 +177,7 @@ export function useWorkbench() {
     exportConfig,
     progress,
     projectDir,
+    workbenchTaskId,
     isProcessing,
     canGoNext,
     canGoPrev,
@@ -111,5 +189,8 @@ export function useWorkbench() {
     clearVideoFile,
     invalidateFrom,
     resetWorkbench,
+    createTask,
+    saveProgress,
+    restoreTask,
   }
 }

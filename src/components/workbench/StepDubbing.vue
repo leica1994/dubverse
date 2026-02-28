@@ -8,7 +8,7 @@ import TtsPluginSelector from '@/components/dubbing/TtsPluginSelector.vue'
 import DubbingProgress from '@/components/dubbing/DubbingProgress.vue'
 
 const {
-  projectDir, videoFile, translatedSubtitles, setStepStatus,
+  projectDir, videoFile, translatedSubtitles, setStepStatus, saveProgress,
 } = useWorkbench()
 
 const dubbing = useDubbing()
@@ -125,6 +125,7 @@ async function startDubbing() {
     dubbing.outputPath.value = outputPath
 
     setStepStatus(3, 'completed')
+    await saveProgress()
   } catch (err) {
     console.error('[StepDubbing] pipeline error:', err)
     dubbing.isRunning.value = false

@@ -81,3 +81,47 @@ export const MOCK_VOICES: TTSVoice[] = [
   { id: 'v5', name: 'Nanami', gender: 'female', language: 'ja' },
   { id: 'v6', name: 'Keita', gender: 'male', language: 'ja' },
 ]
+
+// ── Workbench task persistence ────────────────────────────────────────────────
+
+export interface WorkbenchTaskListItem {
+  id: string
+  name: string
+  videoName: string
+  videoDuration: number
+  currentStep: number
+  stepStatuses: StepStatus[]
+  sourceLanguage: string
+  targetLanguage: string
+  status: 'active' | 'completed'
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WorkbenchTaskFull {
+  id: string
+  name: string
+  projectDir: string
+  videoPath: string
+  videoName: string
+  videoSize: number
+  videoDuration: number
+  videoWidth: number
+  videoHeight: number
+  currentStep: number
+  stepStatuses: string // raw JSON string
+  sourceLanguage: string
+  targetLanguage: string
+  status: string
+  createdAt: string
+  stepTranscribe: {
+    configJson: string
+    subtitlesPath: string | null
+    subtitleCount: number
+  } | null
+  stepTranslate: {
+    configJson: string
+    translatedSubtitlesPath: string | null
+    subtitleCount: number
+  } | null
+}
