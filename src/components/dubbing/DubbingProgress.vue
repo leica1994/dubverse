@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DubbingStage, DubbingStatus } from '@/types/dubbing'
+import type { DubbingStage, DubbingStatus, TtsItemProgress } from '@/types/dubbing'
 import { DUBBING_STAGE_LABELS } from '@/types/dubbing'
 import ProgressBar from '@/components/workbench/ProgressBar.vue'
 
@@ -9,7 +9,15 @@ defineProps<{
   ttsTotal?: number
   ttsCompleted?: number
   currentMessage?: string
+  subtitleTexts?: string[]
+  ttsItems?: Map<number, TtsItemProgress>
 }>()
+
+function ttsItemIcon(status?: string): string {
+  if (status === 'completed') return '✓'
+  if (status === 'failed') return '✕'
+  return '…'
+}
 
 const STAGE_ORDER: DubbingStage[] = [
   'preprocess', 'media', 'reference', 'tts', 'alignment', 'compose',
@@ -48,6 +56,22 @@ function stageIcon(status: DubbingStatus): string {
           :percent="stageProgress[stage]"
           :label="DUBBING_STAGE_LABELS[stage]"
         />
+      </div>
+    </div>
+
+    <div
+      v-if="(stageStatuses.tts === 'running' || stageStatuses.tts === 'completed') && subtitleTexts?.length"
+      class="tts-item-list"
+    >
+      <div
+        v-for="(text, i) in subtitleTexts"
+        :key="i"
+        class="tts-item"
+        :class="`tts-item--${ttsItems?.get(i)?.status ?? 'pending'}`"
+      >
+        <span class="tts-item__index">{{ i + 1 }}</span>
+        <span class="tts-item__icon">{{ ttsItemIcon(ttsItems?.get(i)?.status) }}</span>
+        <span class="tts-item__text">{{ text.length > 50 ? text.slice(0, 50) + '…' : text }}</span>
       </div>
     </div>
   </div>
@@ -146,5 +170,67 @@ function stageIcon(status: DubbingStatus): string {
 .stage-count {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.tts-item-list {
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.tts-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  transition: border-color 0.15s;
+}
+
+.tts-item--completed {
+  border-color: var(--status-success);
+}
+
+.tts-item--failed {
+  border-color: var(--status-error);
+}
+
+.tts-item__index {
+  font-size: 11px;
+  color: var(--text-muted);
+  width: 24px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.tts-item__icon {
+  font-size: 13px;
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.tts-item--completed .tts-item__icon {
+  color: var(--status-success);
+}
+
+.tts-item--failed .tts-item__icon {
+  color: var(--status-error);
+}
+
+.tts-item__text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

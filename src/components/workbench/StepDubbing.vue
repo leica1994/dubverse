@@ -204,6 +204,8 @@ function onCancel() {
         :tts-total="translatedSubtitles.length || undefined"
         :tts-completed="ttsCompletedCount || undefined"
         :current-message="dubbing.currentMessage.value"
+        :subtitle-texts="translatedSubtitles.map(s => s.text)"
+        :tts-items="dubbing.ttsItemProgress.value"
       />
       <button class="btn btn--danger" @click="onCancel">取消</button>
     </template>
