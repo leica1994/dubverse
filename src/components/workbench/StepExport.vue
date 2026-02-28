@@ -81,9 +81,6 @@ function onNewTask() {
         <button class="btn btn--secondary" @click="openInFolder">
           在文件夹中显示
         </button>
-        <button class="btn btn--secondary" :disabled="isCopying" @click="saveToPath">
-          {{ isCopying ? '打开中...' : '打开文件' }}
-        </button>
       </div>
       <div v-if="copyError" class="error-msg">{{ copyError }}</div>
     </div>
