@@ -4,6 +4,10 @@ import { useSettings } from '../composables/useSettings'
 import { useTranscriptionSettings } from '../composables/useTranscriptionSettings'
 import { useTranslationSettings } from '../composables/useTranslationSettings'
 import { useAiConfigs } from '../composables/useAiConfigs'
+import { useTtsPlugins } from '../composables/useTtsPlugins'
+import type { TtsPlugin } from '../types/dubbing'
+import { TTS_PLUGIN_TYPE_LABELS } from '../types/dubbing'
+import TtsPluginEditor from '../components/dubbing/TtsPluginEditor.vue'
 import type { TranscriptionProviderId } from '../types/transcription'
 import type { AiConfig } from '../types/ai-config'
 import { AI_CONFIG_DEFAULTS } from '../types/ai-config'
@@ -142,6 +146,62 @@ const promptSectionCollapsed = ref(true)
 const showPassword = ref<Record<string, boolean>>({})
 function togglePassword(key: string) {
   showPassword.value[key] = !showPassword.value[key]
+}
+
+// ── TTS Plugins ───────────────────────────────────────────────────────────────
+
+const {
+  ttsPlugins, loadTtsPlugins, createTtsPlugin, updateTtsPlugin, deleteTtsPlugin,
+} = useTtsPlugins()
+
+loadTtsPlugins()
+
+const TTS_PLUGIN_DEFAULTS: Omit<TtsPlugin, 'id' | 'createdAt'> = {
+  name: '',
+  pluginType: 'ncn',
+  configJson: JSON.stringify({ voiceId: '' }),
+  requiresRef: false,
+  isEnabled: true,
+  sortOrder: 0,
+}
+
+const ttsFormVisible = ref(false)
+const ttsFormMode = ref<'create' | 'edit'>('create')
+const ttsFormData = ref<TtsPlugin>({
+  id: '', createdAt: '', ...TTS_PLUGIN_DEFAULTS,
+})
+
+function openTtsCreateForm() {
+  ttsFormMode.value = 'create'
+  ttsFormData.value = {
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    ...TTS_PLUGIN_DEFAULTS,
+  }
+  ttsFormVisible.value = true
+}
+
+function openTtsEditForm(plugin: TtsPlugin) {
+  ttsFormMode.value = 'edit'
+  ttsFormData.value = { ...plugin }
+  ttsFormVisible.value = true
+}
+
+function cancelTtsForm() {
+  ttsFormVisible.value = false
+}
+
+async function saveTtsForm() {
+  if (ttsFormMode.value === 'create') {
+    await createTtsPlugin(ttsFormData.value)
+  } else {
+    await updateTtsPlugin(ttsFormData.value)
+  }
+  ttsFormVisible.value = false
+}
+
+async function onDeleteTtsPlugin(id: string) {
+  await deleteTtsPlugin(id)
 }
 </script>
 
@@ -638,7 +698,42 @@ function togglePassword(key: string) {
       </div>
     </section>
 
-    <!-- System -->
+    <!-- TTS Plugins -->
+    <section class="settings-section">
+      <h2 class="section-title">TTS 插件</h2>
+
+      <div class="tts-plugin-list">
+        <div
+          v-for="plugin in ttsPlugins"
+          :key="plugin.id"
+          class="tts-plugin-card"
+        >
+          <div class="tts-plugin-card__info">
+            <span class="tts-plugin-card__name">{{ plugin.name }}</span>
+            <span class="tts-plugin-card__type">{{ TTS_PLUGIN_TYPE_LABELS[plugin.pluginType] }}</span>
+          </div>
+          <div class="tts-plugin-card__actions">
+            <button class="action-btn" @click="openTtsEditForm(plugin)">编辑</button>
+            <button class="action-btn action-btn--danger" @click="onDeleteTtsPlugin(plugin.id)">删除</button>
+          </div>
+        </div>
+        <button class="add-btn" @click="openTtsCreateForm">+ 添加插件</button>
+      </div>
+
+      <!-- TTS plugin form (inline) -->
+      <div v-if="ttsFormVisible" class="ai-form-overlay" @click.self="cancelTtsForm">
+        <div class="ai-form-panel">
+          <h3 class="ai-form-title">{{ ttsFormMode === 'create' ? '添加 TTS 插件' : '编辑 TTS 插件' }}</h3>
+          <TtsPluginEditor
+            v-model="ttsFormData"
+            :is-edit="ttsFormMode === 'edit'"
+            @save="saveTtsForm"
+            @cancel="cancelTtsForm"
+          />
+        </div>
+      </div>
+    </section>
+
     <section class="settings-section">
       <h2 class="section-title">系统</h2>
       <div class="setting-item row">
@@ -1328,5 +1423,87 @@ function togglePassword(key: string) {
 .prompt-editor__textarea::placeholder {
   color: var(--text-muted);
   opacity: 0.7;
+}
+
+/* TTS Plugin styles */
+.tts-plugin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tts-plugin-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.tts-plugin-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tts-plugin-card__name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.tts-plugin-card__type {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.tts-plugin-card__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.action-btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+}
+
+.action-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.action-btn--danger {
+  border-color: var(--status-error);
+  color: var(--status-error);
+  background: transparent;
+}
+
+.action-btn--danger:hover {
+  background: var(--status-error-subtle);
+}
+
+.add-btn {
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.add-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 </style>

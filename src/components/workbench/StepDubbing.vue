@@ -1,98 +1,219 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useWorkbench } from '@/composables/useWorkbench'
-import { MOCK_VOICES } from '@/types/workbench'
-import ProgressBar from './ProgressBar.vue'
-import IconPlay from '@/components/icons/IconPlay.vue'
+import { useDubbing } from '@/composables/useDubbing'
+import type { ReferenceMode } from '@/types/dubbing'
+import ReferenceAudioPicker from '@/components/dubbing/ReferenceAudioPicker.vue'
+import TtsPluginSelector from '@/components/dubbing/TtsPluginSelector.vue'
+import DubbingProgress from '@/components/dubbing/DubbingProgress.vue'
 
 const {
-  ttsConfig, stepStatuses, setStepStatus, progress,
+  projectDir, videoFile, translatedSubtitles, setStepStatus,
 } = useWorkbench()
 
-const selectedVoice = ref(ttsConfig.value.voiceId || '')
-const speed = ref(ttsConfig.value.speed)
-const pitch = ref(ttsConfig.value.pitch)
+const dubbing = useDubbing()
 
-function selectVoice(id: string) {
-  selectedVoice.value = id
-  ttsConfig.value.voiceId = id
+// Config state
+const referenceMode = ref<ReferenceMode>('none')
+const customAudioPath = ref('')
+const ncnVoiceId = ref<string | undefined>()
+const selectedPluginId = ref<string | undefined>()
+const resumePrompt = ref(false)
+
+// UI state
+const isConfigPhase = computed(() =>
+  !dubbing.isRunning.value && !dubbing.jobInfo.value?.status.match(/running|completed/)
+)
+const isRunning = computed(() => dubbing.isRunning.value)
+const isCompleted = computed(() => dubbing.jobInfo.value?.status === 'completed')
+
+const ttsCompletedCount = computed(() => {
+  let n = 0
+  dubbing.ttsItemProgress.value.forEach(v => { if (v.status === 'completed') n++ })
+  return n
+})
+
+onMounted(async () => {
+  await dubbing.startListening()
+  // Check for resumable job
+  if (projectDir.value) {
+    const resumable = await dubbing.checkResumableJob(projectDir.value)
+    if (resumable && dubbing.jobInfo.value) {
+      resumePrompt.value = true
+      // Restore config from existing job
+      const job = dubbing.jobInfo.value
+      referenceMode.value = job.referenceMode
+      customAudioPath.value = job.referenceAudioPath || ''
+      selectedPluginId.value = job.ttsPluginId
+      // ncnVoiceId is not persisted; user re-selects on resume
+    }
+  }
+})
+
+onUnmounted(() => {
+  dubbing.stopListening()
+})
+
+async function startDubbing() {
+  if (!projectDir.value || !videoFile.value) return
+
+  dubbing.isRunning.value = true
+  setStepStatus(3, 'processing')
+  resumePrompt.value = false
+
+  try {
+    const workDir = projectDir.value
+    const videoPath = videoFile.value.path
+    const subtitles = translatedSubtitles.value
+
+    // Initialize job
+    const jobId = await dubbing.initJob({
+      projectDir: workDir,
+      videoPath,
+      subtitleCount: subtitles.length,
+      referenceMode: referenceMode.value,
+      referenceAudioPath: referenceMode.value === 'custom' ? customAudioPath.value : undefined,
+      ttsPluginId: selectedPluginId.value,
+    })
+
+    // Stage 1: Preprocess
+    const preprocessed = await dubbing.runPreprocess(jobId, subtitles)
+    dubbing.preprocessedTexts.value = preprocessed
+
+    // Stage 2: Media separation (needed for clone mode)
+    let vocalPath = ''
+    let silentVideoPath = ''
+    if (referenceMode.value === 'clone' || true) {
+      const mediaResult = await dubbing.runMediaSeparation(jobId, videoPath, workDir)
+      vocalPath = mediaResult.vocalAudioPath
+      silentVideoPath = mediaResult.silentVideoPath
+      dubbing.vocalAudioPath.value = vocalPath
+      dubbing.silentVideoPath.value = silentVideoPath
+    }
+
+    // Stage 3: Reference generation
+    await dubbing.runReferenceGeneration({
+      jobId,
+      referenceMode: referenceMode.value,
+      vocalAudioPath: vocalPath || undefined,
+      customAudioPath: referenceMode.value === 'custom' ? customAudioPath.value : undefined,
+      subtitleEntries: subtitles,
+      workDir,
+    })
+
+    // Init TTS items in DB
+    await dubbing.initTtsItems(jobId, subtitles, preprocessed)
+
+    // Stage 4: TTS generation
+    if (referenceMode.value === 'none') {
+      // Built-in NCN mode
+      await dubbing.runTtsGeneration(jobId, workDir, { ncnVoiceId: ncnVoiceId.value })
+    } else if (selectedPluginId.value) {
+      await dubbing.runTtsGeneration(jobId, workDir, { pluginId: selectedPluginId.value })
+    } else {
+      throw new Error('未选择 TTS 插件')
+    }
+
+    // Stages 5+6: Alignment + compose
+    const outputPath = `${workDir}/output_dubbed.mp4`
+    await dubbing.runAlignmentAndCompose({
+      jobId,
+      silentVideoPath,
+      workDir,
+      outputPath,
+    })
+    dubbing.outputPath.value = outputPath
+
+    setStepStatus(3, 'completed')
+  } catch (err) {
+    console.error('[StepDubbing] pipeline error:', err)
+    dubbing.isRunning.value = false
+    setStepStatus(3, 'ready')
+    return
+  }
+  dubbing.isRunning.value = false
 }
 
-function startDubbing() {
-  if (!selectedVoice.value) return
-  ttsConfig.value = { voiceId: selectedVoice.value, speed: speed.value, pitch: pitch.value }
-  setStepStatus(3, 'processing')
+async function onResume() {
+  resumePrompt.value = false
+  await startDubbing()
+}
 
-  let elapsed = 0
-  const total = 3000
-  const interval = setInterval(() => {
-    elapsed += 50
-    progress.value = {
-      phase: '配音生成',
-      percent: Math.min(100, (elapsed / total) * 100),
-      message: '正在生成配音...',
-    }
-    if (elapsed >= total) {
-      clearInterval(interval)
-      setStepStatus(3, 'completed')
-      progress.value = { phase: '', percent: 100, message: '' }
-    }
-  }, 50)
+async function onStartFresh() {
+  await dubbing.resetJob()
+  resumePrompt.value = false
+  dubbing.resetState()
+}
+
+function onCancel() {
+  dubbing.cancel()
 }
 </script>
 
 <template>
   <div class="step-dubbing">
-    <!-- Voice selection + config -->
-    <template v-if="stepStatuses[3] === 'ready'">
-      <p class="section-title">选择配音声音</p>
-      <div class="voice-grid">
-        <div
-          v-for="voice in MOCK_VOICES"
-          :key="voice.id"
-          class="voice-card"
-          :class="{ 'voice-card--selected': selectedVoice === voice.id }"
-          @click="selectVoice(voice.id)"
-        >
-          <div class="voice-card__icon">
-            <IconPlay />
-          </div>
-          <span class="voice-card__name">{{ voice.name }}</span>
-          <span class="voice-card__gender">{{ voice.gender === 'male' ? '男' : '女' }}</span>
-        </div>
+    <!-- Resume prompt -->
+    <div v-if="resumePrompt" class="resume-card">
+      <div class="resume-card__icon">↺</div>
+      <div class="resume-card__body">
+        <p class="resume-card__title">检测到未完成的配音任务</p>
+        <p class="resume-card__desc">是否继续上次未完成的配音？</p>
       </div>
-
-      <div class="sliders">
-        <div class="slider-field">
-          <label class="field-label">语速: {{ speed.toFixed(1) }}x</label>
-          <input type="range" v-model.number="speed" min="0.5" max="2.0" step="0.1" class="range" />
-        </div>
-        <div class="slider-field">
-          <label class="field-label">音调: {{ pitch.toFixed(1) }}x</label>
-          <input type="range" v-model.number="pitch" min="0.5" max="2.0" step="0.1" class="range" />
-        </div>
-      </div>
-
-      <button
-        class="btn btn--primary"
-        :disabled="!selectedVoice"
-        @click="startDubbing"
-      >生成配音</button>
-    </template>
-
-    <!-- Processing -->
-    <div v-else-if="stepStatuses[3] === 'processing'" class="progress-panel">
-      <div class="progress-card">
-        <p class="progress-phase">{{ progress.message }}</p>
-        <ProgressBar :percent="progress.percent" label="配音生成" show-percent />
+      <div class="resume-card__actions">
+        <button class="btn btn--primary" @click="onResume">继续</button>
+        <button class="btn btn--secondary" @click="onStartFresh">重新开始</button>
       </div>
     </div>
 
-    <!-- Completed -->
-    <div v-else-if="stepStatuses[3] === 'completed'" class="done-panel">
+    <!-- Config panel -->
+    <template v-else-if="isConfigPhase && !isCompleted">
+      <div class="panel">
+        <p class="panel__title">参考音频模式</p>
+        <ReferenceAudioPicker
+          v-model="referenceMode"
+          :custom-audio-path="customAudioPath"
+          :ncn-voice-id="ncnVoiceId"
+          @update:custom-audio-path="customAudioPath = $event"
+          @update:ncn-voice-id="ncnVoiceId = $event"
+        />
+      </div>
+
+      <div v-if="referenceMode !== 'none'" class="panel">
+        <p class="panel__title">TTS 提供商</p>
+        <TtsPluginSelector v-model="selectedPluginId" />
+      </div>
+
+      <button
+        class="btn btn--primary btn--start"
+        :disabled="
+          (referenceMode === 'none' && !ncnVoiceId) ||
+          (referenceMode !== 'none' && !selectedPluginId) ||
+          (referenceMode === 'custom' && !customAudioPath)
+        "
+        @click="startDubbing"
+      >
+        开始配音
+      </button>
+    </template>
+
+    <!-- Running panel -->
+    <template v-else-if="isRunning">
+      <DubbingProgress
+        :stage-statuses="dubbing.stageStatuses.value"
+        :stage-progress="dubbing.stageProgress.value"
+        :tts-total="translatedSubtitles.length || undefined"
+        :tts-completed="ttsCompletedCount || undefined"
+        :current-message="dubbing.currentMessage.value"
+      />
+      <button class="btn btn--danger" @click="onCancel">取消</button>
+    </template>
+
+    <!-- Completed panel -->
+    <div v-else-if="isCompleted" class="done-panel">
       <div class="done-card">
         <div class="done-card__icon">✓</div>
-        <p class="done-card__title">配音生成完成</p>
+        <p class="done-card__title">配音完成</p>
+        <p class="done-card__path">{{ dubbing.outputPath.value }}</p>
       </div>
     </div>
   </div>
@@ -108,98 +229,108 @@ function startDubbing() {
   width: 100%;
 }
 
-.section-title {
-  margin: 0;
+.resume-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+}
+
+.resume-card__icon {
+  font-size: 24px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.resume-card__body {
+  flex: 1;
+}
+
+.resume-card__title {
+  margin: 0 0 4px;
   font-size: 15px;
   font-weight: 500;
   color: var(--text-primary);
 }
 
-.voice-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 12px;
-}
-
-.voice-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 16px 12px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.voice-card:hover {
-  background: var(--bg-hover);
-}
-
-.voice-card--selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-subtle);
-}
-
-.voice-card__icon {
-  color: var(--text-muted);
-}
-
-.voice-card__name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.voice-card__gender {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.sliders {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.slider-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.field-label {
+.resume-card__desc {
+  margin: 0;
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 
-.range {
-  width: 100%;
-  accent-color: var(--accent);
+.resume-card__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
-.progress-panel,
-.done-panel {
-  width: 100%;
-}
-
-.progress-card {
-  padding: 32px 24px;
+.panel {
+  padding: 18px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 12px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 20px;
+  gap: 12px;
 }
 
-.progress-phase {
+.panel__title {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--text-primary);
+}
+
+.btn {
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s ease;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn--secondary {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.btn--secondary:hover {
+  background: var(--bg-elevated);
+}
+
+.btn--danger {
+  background: var(--status-error-subtle);
+  color: var(--status-error);
+  border: 1px solid var(--status-error);
+  align-self: flex-start;
+}
+
+.btn--start {
+  align-self: flex-start;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.done-panel {
+  width: 100%;
 }
 
 .done-card {
@@ -233,27 +364,11 @@ function startDubbing() {
   color: var(--text-primary);
 }
 
-.btn {
-  padding: 8px 20px;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  border: none;
-  transition: all 0.15s ease;
-  align-self: flex-start;
-}
-
-.btn--primary {
-  background: var(--accent);
-  color: #fff;
-}
-
-.btn--primary:hover {
-  background: var(--accent-hover);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.done-card__path {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+  text-align: center;
 }
 </style>

@@ -1,129 +1,101 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { useWorkbench } from '@/composables/useWorkbench'
-import ProgressBar from './ProgressBar.vue'
+import { useDubbing } from '@/composables/useDubbing'
 
 const {
-  exportConfig, stepStatuses, setStepStatus, progress,
-  videoFile, originalSubtitles, ttsConfig, sourceLanguage, targetLanguage,
+  videoFile, originalSubtitles, translatedSubtitles,
+  sourceLanguage, targetLanguage,
   resetWorkbench,
 } = useWorkbench()
 
-const exportDone = ref(false)
+const dubbing = useDubbing()
 
-function startExport() {
-  setStepStatus(4, 'processing')
-  exportDone.value = false
+const isCopying = ref(false)
+const copyDone = ref(false)
+const copyError = ref('')
+const savedPath = ref('')
 
-  let elapsed = 0
-  const total = 2500
-  const interval = setInterval(() => {
-    elapsed += 50
-    progress.value = {
-      phase: '导出',
-      percent: Math.min(100, (elapsed / total) * 100),
-      message: '正在导出视频...',
-    }
-    if (elapsed >= total) {
-      clearInterval(interval)
-      setStepStatus(4, 'completed')
-      exportDone.value = true
-      progress.value = { phase: '', percent: 100, message: '' }
-    }
-  }, 50)
+const outputPath = dubbing.outputPath
+
+async function openInFolder() {
+  const path = savedPath.value || outputPath.value
+  if (!path) return
+  await invoke('plugin:opener|open_path', { path })
+}
+
+async function saveToPath() {
+  const src = outputPath.value
+  if (!src) return
+  isCopying.value = true
+  copyError.value = ''
+  try {
+    // Use tauri opener to show the file
+    await invoke('plugin:opener|open_path', { path: src })
+    savedPath.value = src
+    copyDone.value = true
+  } catch (err) {
+    copyError.value = String(err)
+  } finally {
+    isCopying.value = false
+  }
 }
 
 function onNewTask() {
-  exportDone.value = false
+  copyDone.value = false
+  copyError.value = ''
+  dubbing.resetState()
   resetWorkbench()
 }
 </script>
 
 <template>
   <div class="step-export">
-    <!-- Config state -->
-    <template v-if="stepStatuses[4] === 'ready'">
-      <div class="export-settings">
-        <p class="section-title">导出设置</p>
-        <div class="field-row">
-          <div class="field">
-            <label class="field-label">格式</label>
-            <select v-model="exportConfig.format" class="select">
-              <option value="mp4">MP4</option>
-              <option value="mkv">MKV</option>
-              <option value="webm">WebM</option>
-            </select>
-          </div>
-          <div class="field">
-            <label class="field-label">质量</label>
-            <select v-model="exportConfig.quality" class="select">
-              <option value="high">高质量</option>
-              <option value="medium">中等</option>
-              <option value="low">低质量</option>
-            </select>
-          </div>
+    <!-- Summary -->
+    <div class="summary-card">
+      <p class="section-title">处理摘要</p>
+      <div class="summary-grid">
+        <div class="summary-item">
+          <span class="summary-label">源视频</span>
+          <span class="summary-value">{{ videoFile?.name || '-' }}</span>
         </div>
-        <div class="field">
-          <label class="field-label">保存路径</label>
-          <div class="path-input">
-            <input
-              v-model="exportConfig.outputPath"
-              class="input"
-              placeholder="选择保存位置..."
-              readonly
-            />
-            <button class="btn btn--secondary" @click="exportConfig.outputPath = 'D:/output/dubverse'">
-              浏览
-            </button>
-          </div>
+        <div class="summary-item">
+          <span class="summary-label">字幕数</span>
+          <span class="summary-value">{{ translatedSubtitles.length || originalSubtitles.length }} 条</span>
         </div>
-      </div>
-
-      <div class="summary-card">
-        <p class="section-title">处理摘要</p>
-        <div class="summary-grid">
-          <div class="summary-item">
-            <span class="summary-item__label">源视频</span>
-            <span class="summary-item__value">{{ videoFile?.name || '-' }}</span>
-          </div>
-          <div class="summary-item">
-            <span class="summary-item__label">字幕数</span>
-            <span class="summary-item__value">{{ originalSubtitles.length }} 条</span>
-          </div>
-          <div class="summary-item">
-            <span class="summary-item__label">配音声音</span>
-            <span class="summary-item__value">{{ ttsConfig.voiceId || '-' }}</span>
-          </div>
-          <div class="summary-item">
-            <span class="summary-item__label">语言对</span>
-            <span class="summary-item__value">{{ sourceLanguage }} → {{ targetLanguage }}</span>
-          </div>
+        <div class="summary-item">
+          <span class="summary-label">语言对</span>
+          <span class="summary-value">{{ sourceLanguage }} → {{ targetLanguage }}</span>
         </div>
-      </div>
-
-      <button class="btn btn--primary" @click="startExport">开始导出</button>
-    </template>
-
-    <!-- Processing -->
-    <div v-else-if="stepStatuses[4] === 'processing'" class="progress-panel">
-      <div class="progress-card">
-        <p class="progress-phase">{{ progress.message }}</p>
-        <ProgressBar :percent="progress.percent" label="导出" show-percent />
-      </div>
-    </div>
-
-    <!-- Completed -->
-    <div v-else-if="exportDone" class="done-panel">
-      <div class="done-card">
-        <div class="done-card__icon">✓</div>
-        <p class="done-card__title">导出完成</p>
-        <div class="done-card__actions">
-          <button class="btn btn--secondary">打开文件位置</button>
-          <button class="btn btn--secondary">打开文件</button>
-          <button class="btn btn--primary" @click="onNewTask">新建任务</button>
+        <div class="summary-item">
+          <span class="summary-label">输出文件</span>
+          <span class="summary-value output-path">{{ outputPath || '配音未完成' }}</span>
         </div>
       </div>
     </div>
+
+    <!-- Actions -->
+    <div v-if="outputPath" class="action-card">
+      <p class="section-title">导出操作</p>
+      <div class="action-btns">
+        <button class="btn btn--secondary" @click="openInFolder">
+          在文件夹中显示
+        </button>
+        <button class="btn btn--secondary" :disabled="isCopying" @click="saveToPath">
+          {{ isCopying ? '打开中...' : '打开文件' }}
+        </button>
+      </div>
+      <div v-if="copyError" class="error-msg">{{ copyError }}</div>
+    </div>
+
+    <div v-else class="no-output-hint">
+      尚未完成配音，请先完成 Step 3 配音步骤。
+    </div>
+
+    <button class="btn btn--primary btn--new-task" @click="onNewTask">
+      新建任务
+    </button>
   </div>
 </template>
 
@@ -144,58 +116,8 @@ function onNewTask() {
   color: var(--text-primary);
 }
 
-.export-settings {
-  padding: 20px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-}
-
-.field-row {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.field {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.field-label {
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.select,
-.input {
-  padding: 8px 12px;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text-primary);
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.15s ease;
-}
-
-.select:focus,
-.input:focus {
-  border-color: var(--accent);
-}
-
-.path-input {
-  display: flex;
-  gap: 8px;
-}
-
-.path-input .input {
-  flex: 1;
-}
-
-.summary-card {
+.summary-card,
+.action-card {
   padding: 20px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -214,12 +136,12 @@ function onNewTask() {
   gap: 2px;
 }
 
-.summary-item__label {
+.summary-label {
   font-size: 12px;
   color: var(--text-muted);
 }
 
-.summary-item__value {
+.summary-value {
   font-size: 14px;
   color: var(--text-primary);
   overflow: hidden;
@@ -227,63 +149,32 @@ function onNewTask() {
   white-space: nowrap;
 }
 
-.progress-panel,
-.done-panel {
-  width: 100%;
+.output-path {
+  font-size: 12px;
+  word-break: break-all;
+  white-space: normal;
 }
 
-.progress-card {
-  padding: 32px 24px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-}
-
-.progress-phase {
-  margin: 0;
-  font-size: 15px;
-  color: var(--text-primary);
-}
-
-.done-card {
-  padding: 32px 24px;
-  background: var(--status-success-subtle);
-  border: 1px solid var(--status-success);
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-
-.done-card__icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--status-success);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.done-card__title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.done-card__actions {
+.action-btns {
   display: flex;
   gap: 8px;
-  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.error-msg {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--status-error);
+}
+
+.no-output-hint {
+  padding: 16px 20px;
+  background: var(--bg-elevated);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  font-size: 14px;
+  color: var(--text-muted);
+  text-align: center;
 }
 
 .btn {
@@ -310,7 +201,16 @@ function onNewTask() {
   border: 1px solid var(--border);
 }
 
-.btn--secondary:hover {
+.btn--secondary:hover:not(:disabled) {
   background: var(--bg-elevated);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn--new-task {
+  align-self: flex-start;
 }
 </style>

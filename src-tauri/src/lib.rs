@@ -1,6 +1,8 @@
 mod commands;
 mod db;
 mod ai_pool;
+mod tts;
+mod media;
 
 use db::connection::{DbState, open};
 use db::migration;
@@ -84,6 +86,25 @@ pub fn run() {
             commands::translate::cmd_start_translation,
             commands::translate::cmd_cancel_translation,
             commands::translate::cmd_clear_translation_progress,
+            // Dubbing pipeline
+            commands::dubbing::cmd_init_dubbing_job,
+            commands::dubbing::cmd_get_dubbing_job,
+            commands::dubbing::cmd_reset_dubbing_job,
+            commands::dubbing::cmd_cancel_dubbing,
+            commands::dubbing::cmd_run_preprocess,
+            commands::dubbing::cmd_run_media_separation,
+            commands::dubbing::cmd_run_reference_generation,
+            commands::dubbing::cmd_init_tts_items,
+            commands::dubbing::cmd_run_tts_generation,
+            commands::dubbing::cmd_run_alignment_and_compose,
+            // TTS plugins
+            commands::tts_plugin::cmd_get_tts_plugins,
+            commands::tts_plugin::cmd_create_tts_plugin,
+            commands::tts_plugin::cmd_update_tts_plugin,
+            commands::tts_plugin::cmd_delete_tts_plugin,
+            commands::tts_plugin::cmd_list_tts_voices,
+            commands::tts_plugin::cmd_list_ncn_voices,
+            commands::tts_plugin::cmd_test_tts_plugin,
         ])
         .setup(|app| {
             // Resolve data directory: {exe_dir}/dubverse_data/
@@ -97,6 +118,7 @@ pub fn run() {
             app.manage(DataDirState(data_dir));
             app.manage(ai_pool::AiPoolManager::new());
             app.manage(commands::translate::TranslateCancelState(Arc::new(AtomicBool::new(false))));
+            app.manage(commands::dubbing::DubbingCancelState(Arc::new(AtomicBool::new(false))));
 
             // Set window icon
             if let Some(window) = app.get_webview_window("main") {
