@@ -163,6 +163,7 @@ async fn call_chat_api(
     cfg: &ResolvedConfig,
     system_prompt: &str,
     user_content: &str,
+    temperature: f64,
 ) -> Result<String, String> {
     let url = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
     let body = serde_json::json!({
@@ -171,7 +172,7 @@ async fn call_chat_api(
             { "role": "system", "content": system_prompt },
             { "role": "user", "content": user_content },
         ],
-        "temperature": 0.3,
+        "temperature": temperature,
     });
 
     let resp = client
@@ -198,28 +199,98 @@ async fn call_chat_api(
 
 // ── JSON Parse & Validate ────────────────────────────────────────────────────
 
-fn parse_and_validate(
-    raw: &str,
-    expected_count: usize,
-) -> Result<HashMap<String, String>, String> {
-    // Try direct parse first
-    if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(raw) {
-        if map.len() == expected_count {
-            return Ok(map);
-        }
-    }
-    // Fallback: extract JSON object between first { and last }
-    if let (Some(start), Some(end)) = (raw.find('{'), raw.rfind('}')) {
-        let slice = &raw[start..=end];
-        if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(slice) {
-            if map.len() == expected_count {
-                return Ok(map);
+/// Repair common LLM JSON output issues before parsing.
+fn repair_json(s: &str) -> String {
+    let mut out = s.to_string();
+    // Replace Chinese/curly quotes with ASCII quotes
+    out = out
+        .replace('\u{201C}', "\"")
+        .replace('\u{201D}', "\"")
+        .replace('\u{2018}', "'")
+        .replace('\u{2019}', "'");
+    // Remove trailing commas before } or ]
+    let mut result = String::with_capacity(out.len());
+    let chars: Vec<char> = out.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == ',' {
+            // Peek ahead (skip whitespace) for } or ]
+            let mut j = i + 1;
+            while j < chars.len() && chars[j].is_whitespace() {
+                j += 1;
             }
+            if j < chars.len() && (chars[j] == '}' || chars[j] == ']') {
+                i += 1;
+                continue; // skip trailing comma
+            }
+        }
+        result.push(chars[i]);
+        i += 1;
+    }
+    result
+}
+
+/// Check map content quality beyond count matching.
+fn validate_content(map: &HashMap<String, String>) -> bool {
+    // Reject empty/whitespace translations
+    if map.values().any(|v| v.trim().is_empty()) {
+        return false;
+    }
+    // Reject LLM merge-annotation patterns
+    const MERGE_PATTERNS: &[&str] = &["已合并", "已并入", "同上", "（见第", "(见第", "合并至"];
+    if map
+        .values()
+        .any(|v| MERGE_PATTERNS.iter().any(|p| v.contains(p)))
+    {
+        return false;
+    }
+    true
+}
+
+fn try_parse_map(s: &str, expected_count: usize) -> Result<HashMap<String, String>, String> {
+    if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(s) {
+        if map.len() != expected_count {
             return Err(format!(
                 "条目数不匹配: 期望{expected_count}, 实际{}",
                 map.len()
             ));
         }
+        if !validate_content(&map) {
+            return Err("响应内容验证失败（空值或合并标注）".to_string());
+        }
+        return Ok(map);
+    }
+    // Try JSON repair
+    let repaired = repair_json(s);
+    if repaired != s {
+        if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&repaired) {
+            if map.len() != expected_count {
+                return Err(format!(
+                    "条目数不匹配: 期望{expected_count}, 实际{}",
+                    map.len()
+                ));
+            }
+            if !validate_content(&map) {
+                return Err("响应内容验证失败（空值或合并标注）".to_string());
+            }
+            return Ok(map);
+        }
+    }
+    Err(format!("JSON解析失败: {}", &s[..s.len().min(200)]))
+}
+
+fn parse_and_validate(
+    raw: &str,
+    expected_count: usize,
+) -> Result<HashMap<String, String>, String> {
+    // Try direct parse first
+    if let Ok(map) = try_parse_map(raw, expected_count) {
+        return Ok(map);
+    }
+    // Fallback: extract JSON object between first { and last }
+    if let (Some(start), Some(end)) = (raw.find('{'), raw.rfind('}')) {
+        let slice = &raw[start..=end];
+        return try_parse_map(slice, expected_count);
     }
     Err(format!("无法解析JSON: {}", &raw[..raw.len().min(200)]))
 }
@@ -236,20 +307,20 @@ async fn call_with_retry(
     cfg: &ResolvedConfig,
     system_prompt: &str,
     items: &[(usize, &str)],
+    temperature: f64,
 ) -> Result<HashMap<String, String>, String> {
     // Phase 1: retry full batch up to 3 times
-    let mut last_err = String::new();
     for attempt in 0..3u32 {
         if attempt > 0 {
             tokio::time::sleep(std::time::Duration::from_secs(1 << attempt)).await;
         }
         let content = build_user_content(items);
-        match call_chat_api(client, cfg, system_prompt, &content).await {
+        match call_chat_api(client, cfg, system_prompt, &content, temperature).await {
             Ok(raw) => match parse_and_validate(&raw, items.len()) {
                 Ok(map) => return Ok(map),
-                Err(e) => last_err = e,
+                Err(_) => {}
             },
-            Err(e) => last_err = e,
+            Err(_) => {}
         }
     }
 
@@ -286,7 +357,7 @@ async fn call_with_retry(
                     if retry > 0 {
                         tokio::time::sleep(std::time::Duration::from_secs(1 << retry)).await;
                     }
-                    if let Ok(raw) = call_chat_api(client, cfg, system_prompt, &content).await {
+                    if let Ok(raw) = call_chat_api(client, cfg, system_prompt, &content, temperature).await {
                         if let Ok(map) = parse_and_validate(&raw, chunk.len()) {
                             combined.extend(map);
                             ok = true;
@@ -305,7 +376,31 @@ async fn call_with_retry(
         }
     }
 
-    Err(format!("翻译失败（已重试）: {last_err}"))
+    // Phase 3: single-item fallback — translate one by one, keep original on failure
+    let mut fallback: HashMap<String, String> = HashMap::new();
+    for (idx, text) in items {
+        let content = build_user_content(&[(*idx, *text)]);
+        let mut translated = false;
+        for retry in 0..2u32 {
+            if retry > 0 {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+            if let Ok(raw) = call_chat_api(client, cfg, system_prompt, &content, temperature).await {
+                if let Ok(map) = parse_and_validate(&raw, 1) {
+                    if let Some(result) = map.into_values().next() {
+                        fallback.insert(idx.to_string(), result);
+                        translated = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if !translated {
+            // Keep original text — do not fail the whole batch
+            fallback.insert(idx.to_string(), text.to_string());
+        }
+    }
+    Ok(fallback)
 }
 
 // ── Batch Processing ─────────────────────────────────────────────────────────
@@ -325,6 +420,7 @@ async fn process_batches(
     phase_base_percent: f64,
     phase_weight: f64,
     batch_size: usize,
+    temperature: f64,
 ) -> Result<HashMap<usize, String>, String> {
     // Load existing progress for resume
     let existing = {
@@ -376,7 +472,35 @@ async fn process_batches(
 
         // Build items slice for API call
         let items: Vec<(usize, &str)> = batch.iter().map(|(i, t)| (*i, t.as_str())).collect();
-        let map = call_with_retry(client, cfg, system_prompt, &items).await?;
+        let mut map = call_with_retry(client, cfg, system_prompt, &items, temperature).await?;
+
+        // Retry any missing keys individually (silent fallback prevention)
+        let missing: Vec<(usize, &str)> = items
+            .iter()
+            .filter(|(i, _)| !map.contains_key(&i.to_string()))
+            .copied()
+            .collect();
+        for (idx, text) in &missing {
+            let content = build_user_content(&[(*idx, *text)]);
+            let mut recovered = false;
+            for retry in 0..2u32 {
+                if retry > 0 {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+                if let Ok(raw) = call_chat_api(client, cfg, system_prompt, &content, temperature).await {
+                    if let Ok(m) = parse_and_validate(&raw, 1) {
+                        if let Some(result) = m.into_values().next() {
+                            map.insert(idx.to_string(), result);
+                            recovered = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if !recovered {
+                map.insert(idx.to_string(), text.to_string());
+            }
+        }
 
         // Save results to DB and collect
         {
@@ -420,6 +544,45 @@ async fn process_batches(
     Ok(results)
 }
 
+// ── Language Detection ───────────────────────────────────────────────────────
+
+/// Detect dominant script of a text using Unicode block heuristics.
+/// Returns a rough "language family" tag for consistency checking.
+fn detect_script(text: &str) -> &'static str {
+    let mut cjk = 0usize;
+    let mut latin = 0usize;
+    let mut arabic = 0usize;
+    let mut cyrillic = 0usize;
+    for c in text.chars() {
+        let cp = c as u32;
+        if (0x4E00..=0x9FFF).contains(&cp)
+            || (0x3040..=0x30FF).contains(&cp)
+            || (0xAC00..=0xD7AF).contains(&cp)
+        {
+            cjk += 1;
+        } else if (0x0041..=0x007A).contains(&cp) {
+            latin += 1;
+        } else if (0x0600..=0x06FF).contains(&cp) {
+            arabic += 1;
+        } else if (0x0400..=0x04FF).contains(&cp) {
+            cyrillic += 1;
+        }
+    }
+    let max = cjk.max(latin).max(arabic).max(cyrillic);
+    if max == 0 {
+        return "unknown";
+    }
+    if max == cjk { "cjk" }
+    else if max == latin { "latin" }
+    else if max == arabic { "arabic" }
+    else { "cyrillic" }
+}
+
+fn dominant_script(map: &HashMap<usize, String>) -> &'static str {
+    let sample: String = map.values().take(10).cloned().collect::<Vec<_>>().join(" ");
+    detect_script(&sample)
+}
+
 // ── Pipeline ─────────────────────────────────────────────────────────────────
 
 async fn run_pipeline(
@@ -449,19 +612,19 @@ async fn run_pipeline(
         .map(|(i, s)| (i, s.text.clone()))
         .collect();
 
-    // Phase 1: Correction
+    // Phase 1: Correction (conservative temperature)
     if opts.correction {
         let prompt = build_system_prompt(CORRECTION_SYSTEM_PROMPT, opts);
         let base = phase_idx as f64 * phase_weight;
         current = process_batches(
             app, db, pool, &client, cfg, cancel, &prompt, &current, project_dir,
-            "correction", "校正", base, phase_weight, opts.batch_size,
+            "correction", "校正", base, phase_weight, opts.batch_size, 0.1,
         )
         .await?;
         phase_idx += 1;
     }
 
-    // Phase 2: Translation (always)
+    // Phase 2: Translation (standard temperature)
     {
         let template = if opts.prompt_type == "reflective" {
             REFLECTIVE_SYSTEM_PROMPT
@@ -472,21 +635,33 @@ async fn run_pipeline(
         let base = phase_idx as f64 * phase_weight;
         current = process_batches(
             app, db, pool, &client, cfg, cancel, &prompt, &current, project_dir,
-            "translation", "翻译", base, phase_weight, opts.batch_size,
+            "translation", "翻译", base, phase_weight, opts.batch_size, 0.3,
         )
         .await?;
         phase_idx += 1;
     }
 
-    // Phase 3: Optimization
+    // Phase 3: Optimization (creative temperature)
     if opts.optimization {
+        let translation_script = dominant_script(&current);
         let prompt = build_system_prompt(OPTIMIZE_SYSTEM_PROMPT, opts);
         let base = phase_idx as f64 * phase_weight;
-        current = process_batches(
+        let optimized = process_batches(
             app, db, pool, &client, cfg, cancel, &prompt, &current, project_dir,
-            "optimization", "优化", base, phase_weight, opts.batch_size,
+            "optimization", "优化", base, phase_weight, opts.batch_size, 0.5,
         )
         .await?;
+
+        // Language consistency guard: revert to translation result if script changed
+        let optimized_script = dominant_script(&optimized);
+        if optimized_script != "unknown"
+            && translation_script != "unknown"
+            && optimized_script != translation_script
+        {
+            // Script mismatch detected — discard optimization, keep translation phase results
+        } else {
+            current = optimized;
+        }
     }
 
     // Assemble result
