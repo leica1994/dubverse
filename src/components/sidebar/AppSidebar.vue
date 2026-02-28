@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useSettings } from '@/composables/useSettings'
+import { useWorkbench } from '@/composables/useWorkbench'
 import SidebarItem from './SidebarItem.vue'
 import IconFolder from '../icons/IconFolder.vue'
 import IconFilm from '../icons/IconFilm.vue'
@@ -11,6 +12,7 @@ import IconChevronRight from '../icons/IconChevronRight.vue'
 
 const { settings, setSidebarCollapsed } = useSettings()
 const collapsed = computed(() => settings.value.sidebarCollapsed)
+const { resetWorkbench } = useWorkbench()
 
 function toggle() {
   setSidebarCollapsed(!collapsed.value)
@@ -26,7 +28,7 @@ function toggle() {
       </button>
 
       <div class="nav-main">
-        <SidebarItem to="/" label="工作台" :collapsed="collapsed">
+        <SidebarItem to="/" label="工作台" :collapsed="collapsed" @click="resetWorkbench">
           <template #icon><IconFilm /></template>
         </SidebarItem>
         <SidebarItem to="/batch" label="批量处理" :collapsed="collapsed">
