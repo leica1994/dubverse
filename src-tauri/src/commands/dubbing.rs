@@ -91,6 +91,19 @@ struct DubbingTtsItemDoneEvent {
     audio_path: Option<String>,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PreprocessUpdate {
+    index: i32,
+    text: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DubbingPreprocessBatchResult {
+    updates: Vec<PreprocessUpdate>,
+}
+
 fn emit_progress(app: &AppHandle, stage: &str, percent: f64, message: &str) {
     let _ = app.emit("dubbing:progress", DubbingProgressEvent {
         stage: stage.to_string(),
@@ -447,6 +460,13 @@ pub async fn cmd_run_preprocess(
                 results[idx] = subtitles[idx].text.clone();
             }
         }
+
+        // Emit per-batch result so frontend can update the dual-column list in real time
+        let updates: Vec<PreprocessUpdate> = batch.iter().map(|&idx| PreprocessUpdate {
+            index: idx as i32,
+            text: results[idx].clone(),
+        }).collect();
+        let _ = app.emit("dubbing:preprocess_batch_result", DubbingPreprocessBatchResult { updates });
 
         let percent = (bi as f64 + 1.0) / total_batches as f64 * 100.0;
         emit_progress(&app, "preprocess", percent, &format!("字幕预处理: {}/{total_batches}", bi + 1));

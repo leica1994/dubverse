@@ -152,72 +152,80 @@ function onCancel() {
 
 <template>
   <div class="step-dubbing">
-    <!-- Resume prompt -->
-    <div v-if="resumePrompt" class="resume-card">
-      <div class="resume-card__icon">↺</div>
-      <div class="resume-card__body">
-        <p class="resume-card__title">检测到未完成的配音任务</p>
-        <p class="resume-card__desc">是否继续上次未完成的配音？</p>
-      </div>
-      <div class="resume-card__actions">
-        <button class="btn btn--primary" @click="onResume">继续</button>
-        <button class="btn btn--secondary" @click="onStartFresh">重新开始</button>
-      </div>
-    </div>
-
-    <!-- Config panel -->
-    <template v-else-if="isConfigPhase && !isCompleted">
-      <div class="panel">
-        <p class="panel__title">参考音频模式</p>
-        <ReferenceAudioPicker
-          v-model="referenceMode"
-          :custom-audio-path="customAudioPath"
-          :ncn-voice-id="ncnVoiceId"
-          @update:custom-audio-path="customAudioPath = $event"
-          @update:ncn-voice-id="ncnVoiceId = $event"
+    <!-- Running panel: full-height -->
+    <template v-if="isRunning">
+      <div class="dubbing-running">
+        <DubbingProgress
+          :stage-statuses="dubbing.stageStatuses.value"
+          :stage-progress="dubbing.stageProgress.value"
+          :tts-total="translatedSubtitles.length || undefined"
+          :tts-completed="ttsCompletedCount || undefined"
+          :current-message="dubbing.currentMessage.value"
+          :original-subtitles="translatedSubtitles"
+          :live-preprocessed="dubbing.livePreprocessed.value"
+          :tts-items="dubbing.ttsItemProgress.value"
+          @cancel="onCancel"
         />
       </div>
-
-      <div v-if="referenceMode !== 'none'" class="panel">
-        <p class="panel__title">TTS 提供商</p>
-        <TtsPluginSelector v-model="selectedPluginId" />
-      </div>
-
-      <button
-        class="btn btn--primary btn--start"
-        :disabled="
-          (referenceMode === 'none' && !ncnVoiceId) ||
-          (referenceMode !== 'none' && !selectedPluginId) ||
-          (referenceMode === 'custom' && !customAudioPath)
-        "
-        @click="startDubbing"
-      >
-        开始配音
-      </button>
     </template>
 
-    <!-- Running panel -->
-    <template v-else-if="isRunning">
-      <DubbingProgress
-        :stage-statuses="dubbing.stageStatuses.value"
-        :stage-progress="dubbing.stageProgress.value"
-        :tts-total="translatedSubtitles.length || undefined"
-        :tts-completed="ttsCompletedCount || undefined"
-        :current-message="dubbing.currentMessage.value"
-        :subtitle-texts="translatedSubtitles.map(s => s.text)"
-        :tts-items="dubbing.ttsItemProgress.value"
-      />
-      <button class="btn btn--danger" @click="onCancel">取消</button>
-    </template>
+    <!-- Centered panel: resume / config / completed -->
+    <template v-else>
+      <div class="config-area">
+        <!-- Resume prompt -->
+        <div v-if="resumePrompt" class="resume-card">
+          <div class="resume-card__icon">↺</div>
+          <div class="resume-card__body">
+            <p class="resume-card__title">检测到未完成的配音任务</p>
+            <p class="resume-card__desc">是否继续上次未完成的配音？</p>
+          </div>
+          <div class="resume-card__actions">
+            <button class="btn btn--primary" @click="onResume">继续</button>
+            <button class="btn btn--secondary" @click="onStartFresh">重新开始</button>
+          </div>
+        </div>
 
-    <!-- Completed panel -->
-    <div v-else-if="isCompleted" class="done-panel">
-      <div class="done-card">
-        <div class="done-card__icon">✓</div>
-        <p class="done-card__title">配音完成</p>
-        <p class="done-card__path">{{ dubbing.outputPath.value }}</p>
+        <!-- Config panel -->
+        <template v-else-if="isConfigPhase && !isCompleted">
+          <div class="panel">
+            <p class="panel__title">参考音频模式</p>
+            <ReferenceAudioPicker
+              v-model="referenceMode"
+              :custom-audio-path="customAudioPath"
+              :ncn-voice-id="ncnVoiceId"
+              @update:custom-audio-path="customAudioPath = $event"
+              @update:ncn-voice-id="ncnVoiceId = $event"
+            />
+          </div>
+
+          <div v-if="referenceMode !== 'none'" class="panel">
+            <p class="panel__title">TTS 提供商</p>
+            <TtsPluginSelector v-model="selectedPluginId" />
+          </div>
+
+          <button
+            class="btn btn--primary btn--start"
+            :disabled="
+              (referenceMode === 'none' && !ncnVoiceId) ||
+              (referenceMode !== 'none' && !selectedPluginId) ||
+              (referenceMode === 'custom' && !customAudioPath)
+            "
+            @click="startDubbing"
+          >
+            开始配音
+          </button>
+        </template>
+
+        <!-- Completed panel -->
+        <div v-else-if="isCompleted" class="done-panel">
+          <div class="done-card">
+            <div class="done-card__icon">✓</div>
+            <p class="done-card__title">配音完成</p>
+            <p class="done-card__path">{{ dubbing.outputPath.value }}</p>
+          </div>
+        </div>
       </div>
-    </div>
+    </template>
   </div>
 </template>
 
@@ -225,10 +233,32 @@ function onCancel() {
 .step-dubbing {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Centered scrollable area for config / resume / completed */
+.config-area {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 20px;
+  padding: 24px 16px;
+}
+
+.config-area > * {
   max-width: 600px;
-  margin: 0 auto;
   width: 100%;
+}
+
+/* Full-height running state */
+.dubbing-running {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .resume-card {

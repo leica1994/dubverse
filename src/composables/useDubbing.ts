@@ -19,6 +19,7 @@ const stageStatuses = ref<Record<DubbingStage, DubbingStatus>>({
   tts: 'pending', alignment: 'pending', compose: 'pending',
 })
 const ttsItemProgress = ref<Map<number, TtsItemProgress>>(new Map())
+const livePreprocessed = ref<Map<number, string>>(new Map())
 const currentMessage = ref('')
 const isRunning = ref(false)
 const outputPath = ref('')
@@ -45,6 +46,7 @@ const overallPercent = computed(() => {
 let unlistenProgress: UnlistenFn | null = null
 let unlistenStageChange: UnlistenFn | null = null
 let unlistenTtsItem: UnlistenFn | null = null
+let unlistenPreprocess: UnlistenFn | null = null
 
 async function startListening() {
   unlistenProgress = await listen<DubbingProgressEvent>('dubbing:progress', ({ payload }) => {
@@ -61,15 +63,25 @@ async function startListening() {
       audioPath: payload.audioPath,
     })
   })
+  unlistenPreprocess = await listen<{ updates: Array<{ index: number; text: string }> }>(
+    'dubbing:preprocess_batch_result',
+    ({ payload }) => {
+      const m = new Map(livePreprocessed.value)
+      for (const { index, text } of payload.updates) m.set(index, text)
+      livePreprocessed.value = m
+    },
+  )
 }
 
 function stopListening() {
   unlistenProgress?.()
   unlistenStageChange?.()
   unlistenTtsItem?.()
+  unlistenPreprocess?.()
   unlistenProgress = null
   unlistenStageChange = null
   unlistenTtsItem = null
+  unlistenPreprocess = null
 }
 
 // ── Actions ──────────────────────────────────────────────────────────────────
@@ -125,6 +137,7 @@ function resetState() {
     stageStatuses.value[k as DubbingStage] = 'pending'
   })
   ttsItemProgress.value.clear()
+  livePreprocessed.value = new Map()
   currentMessage.value = ''
   isRunning.value = false
   outputPath.value = ''
@@ -247,6 +260,7 @@ export function useDubbing() {
     stageProgress,
     stageStatuses,
     ttsItemProgress,
+    livePreprocessed,
     currentMessage,
     isRunning,
     outputPath,
