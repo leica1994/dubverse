@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
 import { useWorkbench } from '@/composables/useWorkbench'
 import { useDubbing } from '@/composables/useDubbing'
 
@@ -22,7 +22,7 @@ const outputPath = dubbing.outputPath
 async function openInFolder() {
   const path = savedPath.value || outputPath.value
   if (!path) return
-  await invoke('plugin:opener|open_path', { path })
+  await revealItemInDir(path)
 }
 
 async function saveToPath() {
@@ -31,8 +31,7 @@ async function saveToPath() {
   isCopying.value = true
   copyError.value = ''
   try {
-    // Use tauri opener to show the file
-    await invoke('plugin:opener|open_path', { path: src })
+    await openPath(src)
     savedPath.value = src
     copyDone.value = true
   } catch (err) {
