@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkbenchTasks } from '@/composables/useWorkbenchTasks'
 import { useWorkbench } from '@/composables/useWorkbench'
@@ -7,11 +7,12 @@ import { STEP_LABELS, LANGUAGES, TARGET_LANGUAGES } from '@/types/workbench'
 import type { WorkbenchTaskListItem, WorkbenchTaskFull, StepStatus } from '@/types/workbench'
 const router = useRouter()
 const { tasks, isLoading, loadTasks, getTaskFull, deleteTask } = useWorkbenchTasks()
-const { restoreTask, resetWorkbench } = useWorkbench()
+const { restoreTask, resetWorkbench, workbenchTaskId } = useWorkbench()
 
 const detailTask = ref<WorkbenchTaskFull | null>(null)
 const showDetail = ref(false)
 const deletingId = ref<string | null>(null)
+const confirmDeleteId = ref<string | null>(null)
 
 onMounted(() => {
   loadTasks()
@@ -64,8 +65,6 @@ function currentStepLabel(task: WorkbenchTaskListItem): string {
   return `进行中·Step ${step + 1}: ${label}`
 }
 
-const totalCount = computed(() => tasks.value.length)
-
 // ── Actions ──────────────────────────────────────────────────────────────────
 
 async function openDetail(task: WorkbenchTaskListItem) {
@@ -80,6 +79,11 @@ function closeDetail() {
 
 async function continueTask(task: WorkbenchTaskListItem, event: MouseEvent) {
   event.stopPropagation()
+  // Same task is already active — just navigate, don't disrupt ongoing work
+  if (workbenchTaskId.value === task.id) {
+    router.push('/')
+    return
+  }
   const full = await getTaskFull(task.id)
   if (!full) return
   resetWorkbench()
@@ -87,8 +91,19 @@ async function continueTask(task: WorkbenchTaskListItem, event: MouseEvent) {
   router.push('/')
 }
 
-async function onDelete(task: WorkbenchTaskListItem, event: MouseEvent) {
+function requestDelete(task: WorkbenchTaskListItem, event: MouseEvent) {
   event.stopPropagation()
+  confirmDeleteId.value = task.id
+}
+
+function cancelDelete(event: MouseEvent) {
+  event.stopPropagation()
+  confirmDeleteId.value = null
+}
+
+async function confirmDelete(task: WorkbenchTaskListItem, event: MouseEvent) {
+  event.stopPropagation()
+  confirmDeleteId.value = null
   deletingId.value = task.id
   try {
     await deleteTask(task.id)
@@ -99,6 +114,12 @@ async function onDelete(task: WorkbenchTaskListItem, event: MouseEvent) {
 
 async function continueFromDetail() {
   if (!detailTask.value) return
+  // Same task is already active — just navigate
+  if (workbenchTaskId.value === detailTask.value.id) {
+    showDetail.value = false
+    router.push('/')
+    return
+  }
   const full = detailTask.value
   showDetail.value = false
   resetWorkbench()
@@ -117,12 +138,6 @@ function parseConfigJson(json: string): Record<string, string> {
 
 <template>
   <div class="projects-view">
-    <!-- Header -->
-    <div class="projects-header">
-      <h2 class="projects-title">所有项目</h2>
-      <span v-if="!isLoading" class="projects-count">{{ totalCount }} 个任务</span>
-    </div>
-
     <!-- Loading -->
     <div v-if="isLoading" class="projects-loading">
       <div class="spinner"></div>
@@ -177,27 +192,35 @@ function parseConfigJson(json: string): Record<string, string> {
 
         <!-- Actions -->
         <div class="task-card__actions" @click.stop>
-          <button
-            v-if="task.status !== 'completed'"
-            class="btn btn--primary btn--sm"
-            @click="continueTask(task, $event)"
-          >
-            继续
-          </button>
-          <button
-            v-else
-            class="btn btn--secondary btn--sm"
-            @click="continueTask(task, $event)"
-          >
-            查看
-          </button>
-          <button
-            class="btn btn--danger btn--sm"
-            :disabled="deletingId === task.id"
-            @click="onDelete(task, $event)"
-          >
-            {{ deletingId === task.id ? '删除中...' : '删除' }}
-          </button>
+          <!-- Default state -->
+          <template v-if="confirmDeleteId !== task.id">
+            <button
+              v-if="task.status !== 'completed'"
+              class="btn btn--primary btn--sm"
+              @click="continueTask(task, $event)"
+            >继续</button>
+            <button
+              v-else
+              class="btn btn--secondary btn--sm"
+              @click="continueTask(task, $event)"
+            >查看</button>
+            <button
+              class="btn btn--danger btn--sm"
+              :disabled="deletingId === task.id"
+              @click="requestDelete(task, $event)"
+            >删除</button>
+          </template>
+
+          <!-- Confirm delete state -->
+          <template v-else>
+            <span class="delete-confirm-text">确认删除？此操作不可撤销</span>
+            <button class="btn btn--secondary btn--sm" @click="cancelDelete($event)">取消</button>
+            <button
+              class="btn btn--danger btn--sm"
+              :disabled="deletingId === task.id"
+              @click="confirmDelete(task, $event)"
+            >{{ deletingId === task.id ? '删除中...' : '确认' }}</button>
+          </template>
         </div>
       </div>
     </div>
@@ -284,28 +307,6 @@ function parseConfigJson(json: string): Record<string, string> {
   height: 100%;
   padding: 24px;
   overflow-y: auto;
-  gap: 20px;
-}
-
-/* ── Header ─────────────────────────────────────────────────────────────── */
-
-.projects-header {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-.projects-title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.projects-count {
-  font-size: 13px;
-  color: var(--text-muted);
 }
 
 /* ── Loading / Empty ────────────────────────────────────────────────────── */
@@ -482,6 +483,15 @@ function parseConfigJson(json: string): Record<string, string> {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+  align-items: center;
+}
+
+.delete-confirm-text {
+  font-size: 12px;
+  color: var(--status-error);
+  display: flex;
+  align-items: center;
+  flex: 1;
 }
 
 /* ── Buttons ────────────────────────────────────────────────────────────── */

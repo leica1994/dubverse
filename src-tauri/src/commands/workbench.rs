@@ -137,5 +137,23 @@ pub fn cmd_delete_workbench_task(
     task_id: String,
 ) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    delete_workbench_task(&conn, &task_id).map_err(|e| e.to_string())
+
+    // 1. Query project_dir before deleting DB record
+    let project_dir: Option<String> = conn
+        .query_row(
+            "SELECT project_dir FROM workbench_tasks WHERE id = ?1",
+            rusqlite::params![&task_id],
+            |row| row.get(0),
+        )
+        .ok();
+
+    // 2. Delete DB record (CASCADE removes child table rows)
+    delete_workbench_task(&conn, &task_id).map_err(|e| e.to_string())?;
+
+    // 3. Remove disk directory (ignore errors, don't block the operation)
+    if let Some(dir) = project_dir {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    Ok(())
 }

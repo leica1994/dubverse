@@ -88,10 +88,6 @@ function onNewTask() {
     <div v-else class="no-output-hint">
       尚未完成配音，请先完成 Step 3 配音步骤。
     </div>
-
-    <button class="btn btn--primary btn--new-task" @click="onNewTask">
-      新建任务
-    </button>
   </div>
 </template>
 

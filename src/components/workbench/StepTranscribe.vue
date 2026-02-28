@@ -38,11 +38,23 @@ async function startProcessing() {
     // Step 1: Create project & cache directories
     progress.value = { phase: '初始化', percent: 5, message: '创建项目目录...' }
     const stem = videoFile.value.name.replace(/\.[^.]+$/, '')
-    const { projectDir: dir, cacheDir } = await invoke<{ projectDir: string; cacheDir: string }>(
-      'cmd_create_project_dir', { videoStem: stem }
-    )
-    projectDir.value = dir
-    await createTask()
+    let dir: string
+    let cacheDir: string
+
+    if (!projectDir.value) {
+      // First transcription: create both project dir and cache dir
+      const dirs = await invoke<{ projectDir: string; cacheDir: string }>(
+        'cmd_create_project_dir', { videoStem: stem }
+      )
+      dir = dirs.projectDir
+      cacheDir = dirs.cacheDir
+      projectDir.value = dir
+      await createTask()
+    } else {
+      // Re-transcription: reuse existing project dir, only create a fresh cache dir
+      dir = projectDir.value
+      cacheDir = await invoke<string>('cmd_create_cache_dir', { videoStem: stem })
+    }
 
     // Step 2: Extract audio into cache dir
     progress.value = { phase: '提取音频', percent: 10, message: '提取音频中...' }

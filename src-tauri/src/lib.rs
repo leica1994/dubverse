@@ -72,6 +72,7 @@ pub fn run() {
             cmd_get_provider_secret,
             cmd_set_provider_secret,
             commands::transcribe::cmd_create_project_dir,
+            commands::transcribe::cmd_create_cache_dir,
             commands::transcribe::cmd_extract_audio,
             commands::transcribe::cmd_transcribe_elevenlabs,
             commands::transcribe::cmd_transcribe_bcut,

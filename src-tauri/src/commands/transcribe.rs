@@ -47,6 +47,22 @@ pub async fn cmd_create_project_dir(
     })
 }
 
+/// Creates only a new cache dir (used when re-transcribing an existing task to reuse its project dir).
+#[tauri::command]
+pub async fn cmd_create_cache_dir(
+    data_dir: State<'_, crate::DataDirState>,
+    video_stem: String,
+) -> Result<String, String> {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    let dir_name = format!("{}_{}", sanitize_stem(&video_stem), ts);
+    let cache_dir = data_dir.0.join("cache").join(&dir_name);
+    std::fs::create_dir_all(&cache_dir).map_err(|e| e.to_string())?;
+    Ok(cache_dir.to_string_lossy().into_owned())
+}
+
 fn sanitize_stem(s: &str) -> String {
     s.chars()
         .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })

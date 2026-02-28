@@ -8,7 +8,7 @@ import TtsPluginSelector from '@/components/dubbing/TtsPluginSelector.vue'
 import DubbingProgress from '@/components/dubbing/DubbingProgress.vue'
 
 const {
-  projectDir, videoFile, translatedSubtitles, setStepStatus, saveProgress,
+  projectDir, videoFile, translatedSubtitles, setStepStatus, saveProgress, stepStatuses,
 } = useWorkbench()
 
 const dubbing = useDubbing()
@@ -38,7 +38,9 @@ onMounted(async () => {
   // Check for resumable job
   if (projectDir.value) {
     const resumable = await dubbing.checkResumableJob(projectDir.value)
-    if (resumable && dubbing.jobInfo.value) {
+    // Only show resume prompt if the workbench step is not already marked completed.
+    // If stepStatuses[3] === 'completed', the job info is loaded (stages visible) but we skip the prompt.
+    if (resumable && dubbing.jobInfo.value && stepStatuses.value[3] !== 'completed') {
       resumePrompt.value = true
       // Restore config from existing job
       const job = dubbing.jobInfo.value
@@ -60,6 +62,7 @@ async function startDubbing() {
   dubbing.isRunning.value = true
   setStepStatus(3, 'processing')
   resumePrompt.value = false
+  await saveProgress() // 立即记录"已到达配音步骤"，防止未完成时恢复到翻译步骤
 
   try {
     const workDir = projectDir.value

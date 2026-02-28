@@ -40,11 +40,13 @@ function goToStep(step: number) {
   const targetStatus = stepStatuses.value[step]
   if (targetStatus === 'idle') return
   currentStep.value = step
+  saveProgress()
 }
 
 function goNext() {
   if (canGoNext.value) {
     currentStep.value++
+    saveProgress()
   }
 }
 
