@@ -31,6 +31,20 @@ struct TranslateProgress {
     message: String,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TranslateBatchResult {
+    phase: String,
+    updates: Vec<BatchUpdate>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchUpdate {
+    index: usize,
+    text: String,
+}
+
 struct TranslateOpts {
     target_language: String,
     correction: bool,
@@ -463,6 +477,18 @@ async fn process_batches(
                 message: format!("{phase_label}: 全部已完成（断点续传）"),
             },
         );
+        // Emit all existing results so the live subtitle list pre-fills on resume
+        let resume_updates: Vec<BatchUpdate> = results
+            .iter()
+            .map(|(idx, text)| BatchUpdate { index: *idx, text: text.clone() })
+            .collect();
+        let _ = app.emit(
+            "translate:batch_result",
+            TranslateBatchResult {
+                phase: phase_label.to_string(),
+                updates: resume_updates,
+            },
+        );
         return Ok(results);
     }
 
@@ -532,6 +558,24 @@ async fn process_batches(
                 }
             }
         }
+
+        // Emit batch results for live subtitle preview
+        let batch_updates: Vec<BatchUpdate> = items
+            .iter()
+            .filter_map(|(idx, _)| {
+                results.get(idx).map(|text| BatchUpdate {
+                    index: *idx,
+                    text: text.clone(),
+                })
+            })
+            .collect();
+        let _ = app.emit(
+            "translate:batch_result",
+            TranslateBatchResult {
+                phase: phase_label.to_string(),
+                updates: batch_updates,
+            },
+        );
 
         // Emit progress
         let batch_num = batch_idx as u32 + 1;

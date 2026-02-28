@@ -12,7 +12,7 @@ const {
 const exportDone = ref(false)
 
 function startExport() {
-  setStepStatus(5, 'processing')
+  setStepStatus(4, 'processing')
   exportDone.value = false
 
   let elapsed = 0
@@ -26,7 +26,7 @@ function startExport() {
     }
     if (elapsed >= total) {
       clearInterval(interval)
-      setStepStatus(5, 'completed')
+      setStepStatus(4, 'completed')
       exportDone.value = true
       progress.value = { phase: '', percent: 100, message: '' }
     }
@@ -42,7 +42,7 @@ function onNewTask() {
 <template>
   <div class="step-export">
     <!-- Config state -->
-    <template v-if="stepStatuses[5] === 'ready'">
+    <template v-if="stepStatuses[4] === 'ready'">
       <div class="export-settings">
         <p class="section-title">导出设置</p>
         <div class="field-row">
@@ -105,7 +105,7 @@ function onNewTask() {
     </template>
 
     <!-- Processing -->
-    <div v-else-if="stepStatuses[5] === 'processing'" class="progress-panel">
+    <div v-else-if="stepStatuses[4] === 'processing'" class="progress-panel">
       <div class="progress-card">
         <p class="progress-phase">{{ progress.message }}</p>
         <ProgressBar :percent="progress.percent" label="导出" show-percent />

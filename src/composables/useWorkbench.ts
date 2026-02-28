@@ -5,10 +5,10 @@ import type {
 import { STEP_LABELS } from '@/types/workbench'
 
 const currentStep = ref(0)
-const stepStatuses = ref<StepStatus[]>(['ready', 'idle', 'idle', 'idle', 'idle', 'idle'])
+const stepStatuses = ref<StepStatus[]>(['ready', 'idle', 'idle', 'idle', 'idle'])
 const videoFile = ref<VideoFile | null>(null)
 const sourceLanguage = ref('auto')
-const targetLanguage = ref('en')
+const targetLanguage = ref('zh')
 const originalSubtitles = ref<Subtitle[]>([])
 const translatedSubtitles = ref<Subtitle[]>([])
 const ttsConfig = ref<TTSConfig>({ voiceId: '', speed: 1.0, pitch: 1.0 })
@@ -75,10 +75,10 @@ function clearVideoFile() {
 
 function resetWorkbench() {
   currentStep.value = 0
-  stepStatuses.value = ['ready', 'idle', 'idle', 'idle', 'idle', 'idle']
+  stepStatuses.value = ['ready', 'idle', 'idle', 'idle', 'idle']
   videoFile.value = null
   sourceLanguage.value = 'auto'
-  targetLanguage.value = 'en'
+  targetLanguage.value = 'zh'
   originalSubtitles.value = []
   translatedSubtitles.value = []
   ttsConfig.value = { voiceId: '', speed: 1.0, pitch: 1.0 }

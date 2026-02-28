@@ -48,10 +48,21 @@ export interface ProgressInfo {
   message: string
 }
 
-export const STEP_LABELS = ['上传', '转录', '翻译', '审阅', '配音', '导出'] as const
+export const STEP_LABELS = ['上传', '转录', '翻译', '配音', '导出'] as const
 
 export const LANGUAGES = [
   { code: 'auto', label: '自动检测' },
+  { code: 'zh', label: '中文' },
+  { code: 'en', label: 'English' },
+  { code: 'ja', label: '日本語' },
+  { code: 'ko', label: '한국어' },
+  { code: 'es', label: 'Español' },
+  { code: 'fr', label: 'Français' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'ru', label: 'Русский' },
+] as const
+
+export const TARGET_LANGUAGES = [
   { code: 'zh', label: '中文' },
   { code: 'en', label: 'English' },
   { code: 'ja', label: '日本語' },

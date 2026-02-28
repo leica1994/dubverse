@@ -5,7 +5,6 @@ import StepIndicator from '@/components/workbench/StepIndicator.vue'
 import StepUpload from '@/components/workbench/StepUpload.vue'
 import StepTranscribe from '@/components/workbench/StepTranscribe.vue'
 import StepTranslate from '@/components/workbench/StepTranslate.vue'
-import StepReview from '@/components/workbench/StepReview.vue'
 import StepDubbing from '@/components/workbench/StepDubbing.vue'
 import StepExport from '@/components/workbench/StepExport.vue'
 
@@ -45,9 +44,8 @@ function handlePrev() {
           <StepUpload v-if="currentStep === 0" key="0" />
           <StepTranscribe v-else-if="currentStep === 1" key="1" />
           <StepTranslate v-else-if="currentStep === 2" key="2" />
-          <StepReview v-else-if="currentStep === 3" key="3" />
-          <StepDubbing v-else-if="currentStep === 4" key="4" />
-          <StepExport v-else-if="currentStep === 5" key="5" />
+          <StepDubbing v-else-if="currentStep === 3" key="3" />
+          <StepExport v-else-if="currentStep === 4" key="4" />
         </Transition>
       </div>
     </div>

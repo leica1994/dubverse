@@ -5,6 +5,7 @@ import { useWorkbench } from '@/composables/useWorkbench'
 import { useTranscriptionSettings } from '@/composables/useTranscriptionSettings'
 import { LANGUAGES } from '@/types/workbench'
 import ProgressBar from './ProgressBar.vue'
+import SubtitleRow from './SubtitleRow.vue'
 
 const {
   videoFile, sourceLanguage, stepStatuses, setStepStatus,
@@ -106,56 +107,76 @@ function resetToReady() {
   setStepStatus(1, 'ready')
   progress.value = { phase: '', percent: 0, message: '' }
 }
+
+function onUpdateSubtitle(idx: number, text: string) {
+  originalSubtitles.value[idx].text = text
+}
 </script>
 
 <template>
   <div class="step-transcribe">
     <!-- Config state -->
-    <div v-if="stepStatuses[1] === 'ready'" class="config-panel">
-      <div class="field">
-        <label class="field-label">源语言</label>
-        <select v-model="sourceLanguage" class="select">
-          <option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
-        </select>
-      </div>
-
-      <button class="advanced-toggle" @click="showAdvanced = !showAdvanced">
-        {{ showAdvanced ? '收起' : '高级选项' }}
-      </button>
-
-      <div v-if="showAdvanced" class="advanced-options">
-        <div class="active-provider-hint">
-          <div class="active-provider-info">
-            <span class="active-provider-name">{{ activeProvider.name }}</span>
-            <span class="active-provider-desc">{{ activeProvider.description }}</span>
-          </div>
-          <router-link to="/settings" class="go-settings-link">在设置中更改 →</router-link>
+    <div v-if="stepStatuses[1] === 'ready'" class="step-transcribe__center">
+      <div class="config-panel">
+        <div class="field">
+          <label class="field-label">源语言</label>
+          <select v-model="sourceLanguage" class="select">
+            <option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
+          </select>
         </div>
+
+        <button class="advanced-toggle" @click="showAdvanced = !showAdvanced">
+          {{ showAdvanced ? '收起' : '高级选项' }}
+        </button>
+
+        <div v-if="showAdvanced" class="advanced-options">
+          <div class="active-provider-hint">
+            <div class="active-provider-info">
+              <span class="active-provider-name">{{ activeProvider.name }}</span>
+              <span class="active-provider-desc">{{ activeProvider.description }}</span>
+            </div>
+            <router-link to="/settings" class="go-settings-link">在设置中更改 →</router-link>
+          </div>
+        </div>
+
+        <p v-if="errorMessage" class="validation-error">{{ errorMessage }}</p>
+
+        <button class="btn btn--primary" @click="startProcessing">开始转录</button>
       </div>
-
-      <p v-if="errorMessage" class="validation-error">{{ errorMessage }}</p>
-
-      <button class="btn btn--primary" @click="startProcessing">开始转录</button>
     </div>
 
     <!-- Processing state -->
-    <div v-else-if="stepStatuses[1] === 'processing'" class="progress-panel">
-      <div class="progress-card">
-        <p class="progress-phase">{{ progress.message }}</p>
-        <ProgressBar :percent="progress.percent" :label="progress.phase" show-percent />
-        <button class="btn btn--secondary" @click="cancelProcessing">取消</button>
+    <div v-else-if="stepStatuses[1] === 'processing'" class="step-transcribe__center">
+      <div class="progress-panel">
+        <div class="progress-card">
+          <p class="progress-phase">{{ progress.message }}</p>
+          <ProgressBar :percent="progress.percent" :label="progress.phase" show-percent />
+          <button class="btn btn--secondary" @click="cancelProcessing">取消</button>
+        </div>
       </div>
     </div>
 
-    <!-- Completed state -->
-    <div v-else-if="stepStatuses[1] === 'completed'" class="done-panel">
-      <div class="done-card">
-        <div class="done-card__icon">✓</div>
-        <p class="done-card__title">转录完成</p>
-        <div class="done-card__meta">
-          <span>{{ originalSubtitles.length }} 条字幕</span>
-          <span>{{ sourceLanguage }}</span>
+    <!-- Completed state — full-width card with editable subtitle list -->
+    <div v-else-if="stepStatuses[1] === 'completed'" class="transcribe-completed">
+      <div class="transcribe-header">
+        <div class="transcribe-header__badge">
+          <span class="badge-icon">✓</span>
+          <span>转录完成</span>
         </div>
+        <div class="transcribe-header__meta">
+          <span>{{ originalSubtitles.length }} 条字幕</span>
+          <span>源语言: {{ sourceLanguage }}</span>
+        </div>
+        <button class="btn btn--ghost" @click="resetToReady">重新转录</button>
+      </div>
+      <div class="transcribe-subtitle-list">
+        <SubtitleRow
+          v-for="(sub, idx) in originalSubtitles"
+          :key="sub.id"
+          :subtitle="sub"
+          editable
+          @update="(text) => onUpdateSubtitle(idx, text)"
+        />
       </div>
     </div>
   </div>
@@ -164,9 +185,20 @@ function resetToReady() {
 <style scoped>
 .step-transcribe {
   display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.step-transcribe__center {
+  flex: 1;
+  display: flex;
   justify-content: center;
   padding-top: 24px;
+  overflow-y: auto;
 }
+
+/* ── Config panel ──────────────────────────────────────────────────────── */
 
 .config-panel {
   max-width: 480px;
@@ -222,7 +254,6 @@ function resetToReady() {
   gap: 6px;
 }
 
-/* Active provider hint */
 .active-provider-hint {
   display: flex;
   align-items: center;
@@ -270,6 +301,8 @@ function resetToReady() {
   border-radius: 8px;
 }
 
+/* ── Progress panel ────────────────────────────────────────────────────── */
+
 .progress-panel {
   max-width: 480px;
   width: 100%;
@@ -292,48 +325,65 @@ function resetToReady() {
   color: var(--text-primary);
 }
 
-.done-panel {
-  max-width: 480px;
-  width: 100%;
-}
+/* ── Completed state ───────────────────────────────────────────────────── */
 
-.done-card {
-  padding: 32px 24px;
-  background: var(--status-success-subtle);
-  border: 1px solid var(--status-success);
-  border-radius: 12px;
+.transcribe-completed {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
 }
 
-.done-card__icon {
-  width: 40px;
-  height: 40px;
+.transcribe-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+}
+
+.transcribe-header__badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--status-success);
+}
+
+.badge-icon {
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--status-success);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 11px;
   font-weight: 700;
+  flex-shrink: 0;
 }
 
-.done-card__title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.done-card__meta {
+.transcribe-header__meta {
   display: flex;
   gap: 16px;
   font-size: 13px;
   color: var(--text-secondary);
+  flex: 1;
 }
+
+.transcribe-subtitle-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ── Shared buttons ────────────────────────────────────────────────────── */
 
 .btn {
   padding: 8px 20px;
@@ -361,5 +411,19 @@ function resetToReady() {
 
 .btn--secondary:hover {
   background: var(--bg-elevated);
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  padding: 6px 14px;
+  font-size: 13px;
+  margin-left: auto;
+}
+
+.btn--ghost:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 </style>

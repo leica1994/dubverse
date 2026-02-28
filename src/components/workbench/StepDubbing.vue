@@ -21,7 +21,7 @@ function selectVoice(id: string) {
 function startDubbing() {
   if (!selectedVoice.value) return
   ttsConfig.value = { voiceId: selectedVoice.value, speed: speed.value, pitch: pitch.value }
-  setStepStatus(4, 'processing')
+  setStepStatus(3, 'processing')
 
   let elapsed = 0
   const total = 3000
@@ -34,7 +34,7 @@ function startDubbing() {
     }
     if (elapsed >= total) {
       clearInterval(interval)
-      setStepStatus(4, 'completed')
+      setStepStatus(3, 'completed')
       progress.value = { phase: '', percent: 100, message: '' }
     }
   }, 50)
@@ -44,7 +44,7 @@ function startDubbing() {
 <template>
   <div class="step-dubbing">
     <!-- Voice selection + config -->
-    <template v-if="stepStatuses[4] === 'ready'">
+    <template v-if="stepStatuses[3] === 'ready'">
       <p class="section-title">选择配音声音</p>
       <div class="voice-grid">
         <div
@@ -81,7 +81,7 @@ function startDubbing() {
     </template>
 
     <!-- Processing -->
-    <div v-else-if="stepStatuses[4] === 'processing'" class="progress-panel">
+    <div v-else-if="stepStatuses[3] === 'processing'" class="progress-panel">
       <div class="progress-card">
         <p class="progress-phase">{{ progress.message }}</p>
         <ProgressBar :percent="progress.percent" label="配音生成" show-percent />
@@ -89,7 +89,7 @@ function startDubbing() {
     </div>
 
     <!-- Completed -->
-    <div v-else-if="stepStatuses[4] === 'completed'" class="done-panel">
+    <div v-else-if="stepStatuses[3] === 'completed'" class="done-panel">
       <div class="done-card">
         <div class="done-card__icon">✓</div>
         <p class="done-card__title">配音生成完成</p>

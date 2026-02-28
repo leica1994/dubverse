@@ -10,7 +10,7 @@ import IconDownload from '@/components/icons/IconDownload.vue'
 import IconLoader from '@/components/icons/IconLoader.vue'
 import IconAlertCircle from '@/components/icons/IconAlertCircle.vue'
 
-const STEP_ICONS = [IconUpload, IconMic, IconLanguage, IconCheck, IconVolume, IconDownload]
+const STEP_ICONS = [IconUpload, IconMic, IconLanguage, IconVolume, IconDownload]
 
 const STATUS_LABELS: Record<StepStatus, string> = {
   idle: '等待中',
