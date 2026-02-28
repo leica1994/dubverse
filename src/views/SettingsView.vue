@@ -147,47 +147,9 @@ function togglePassword(key: string) {
 
 <template>
   <div class="settings-page">
-    <!-- Appearance -->
-    <section class="settings-section">
-      <h2 class="section-title">外观</h2>
-      <div class="setting-item">
-        <span class="setting-label">主题</span>
-        <div class="theme-options">
-          <button
-            v-for="opt in themeOptions"
-            :key="opt.value"
-            class="theme-card"
-            :class="{ active: settings.theme === opt.value }"
-            @click="setTheme(opt.value)"
-          >
-            <component :is="opt.icon" />
-            <span>{{ opt.label }}</span>
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- System -->
-    <section class="settings-section">
-      <h2 class="section-title">系统</h2>
-      <div class="setting-item row">
-        <div class="setting-info">
-          <span class="setting-label">关闭时最小化到托盘</span>
-          <span class="setting-desc">关闭窗口时应用将最小化到系统托盘，而非退出应用</span>
-        </div>
-        <label class="toggle">
-          <input
-            type="checkbox"
-            :checked="settings.closeToTray"
-            @change="setCloseToTray(($event.target as HTMLInputElement).checked)"
-          />
-          <span class="toggle-slider" />
-        </label>
-      </div>
-    </section>
-
     <!-- Transcription Model -->
-    <section class="settings-section">      <h2 class="section-title">转录模型</h2>
+    <section class="settings-section">
+      <h2 class="section-title">转录模型</h2>
 
       <!-- Provider selection -->
       <div class="setting-item">
@@ -450,7 +412,11 @@ function togglePassword(key: string) {
     <section class="settings-section">
       <h2 class="section-title">翻译设置</h2>
 
+      <!-- Card 1: 流程配置 -->
       <div class="setting-item">
+        <div class="config-panel-header">
+          <span class="config-panel-title">流程配置</span>
+        </div>
         <div class="config-fields">
           <!-- Correction toggle -->
           <div class="config-field">
@@ -499,7 +465,15 @@ function togglePassword(key: string) {
             />
             <span class="field-hint">每次 API 调用处理的字幕条数，建议 10-50</span>
           </div>
+        </div>
+      </div>
 
+      <!-- Card 2: 翻译上下文 -->
+      <div class="setting-item">
+        <div class="config-panel-header">
+          <span class="config-panel-title">翻译上下文</span>
+        </div>
+        <div class="config-fields">
           <!-- World building -->
           <div class="config-field">
             <label class="field-label">世界观 / 背景设定</label>
@@ -559,86 +533,127 @@ function togglePassword(key: string) {
               placeholder="额外的翻译指令..."
             />
           </div>
+        </div>
+      </div>
 
-          <!-- Advanced prompt config (collapsible) -->
-          <div class="prompt-section">
-            <button class="prompt-section__toggle" @click="promptSectionCollapsed = !promptSectionCollapsed">
-              <svg
-                class="prompt-section__arrow"
-                :class="{ expanded: !promptSectionCollapsed }"
-                xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
-                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-              ><polyline points="9 18 15 12 9 6"/></svg>
-              <span>高级提示词配置</span>
-            </button>
+      <!-- Card 3: 高级提示词 (collapsible) -->
+      <div class="setting-item">
+        <div class="prompt-section">
+          <button class="prompt-section__toggle" @click="promptSectionCollapsed = !promptSectionCollapsed">
+            <svg
+              class="prompt-section__arrow"
+              :class="{ expanded: !promptSectionCollapsed }"
+              xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            ><polyline points="9 18 15 12 9 6"/></svg>
+            <span>高级提示词配置</span>
+          </button>
 
-            <div v-if="!promptSectionCollapsed" class="prompt-section__body">
-              <!-- Correction prompt -->
-              <div class="config-field">
-                <div class="prompt-field-header">
-                  <label class="field-label">校正阶段提示词</label>
-                  <button
-                    v-if="translationSettings.promptCorrection"
-                    class="reset-btn" @click="translationSettings.promptCorrection = ''"
-                  >恢复默认</button>
-                </div>
-                <textarea
-                  class="field-textarea" rows="4"
-                  v-model="translationSettings.promptCorrection"
-                  :placeholder="PROMPT_DEFAULTS.correction"
-                />
+          <div v-if="!promptSectionCollapsed" class="prompt-section__body">
+            <!-- Correction prompt -->
+            <div class="prompt-editor">
+              <div class="prompt-editor__header">
+                <span class="prompt-editor__title">校正阶段提示词</span>
+                <button
+                  v-if="translationSettings.promptCorrection"
+                  class="reset-btn" @click="translationSettings.promptCorrection = ''"
+                >恢复默认</button>
               </div>
+              <textarea
+                class="prompt-editor__textarea"
+                v-model="translationSettings.promptCorrection"
+                :placeholder="PROMPT_DEFAULTS.correction"
+              />
+            </div>
 
-              <!-- Standard prompt -->
-              <div class="config-field">
-                <div class="prompt-field-header">
-                  <label class="field-label">标准翻译提示词</label>
-                  <button
-                    v-if="translationSettings.promptStandard"
-                    class="reset-btn" @click="translationSettings.promptStandard = ''"
-                  >恢复默认</button>
-                </div>
-                <textarea
-                  class="field-textarea" rows="4"
-                  v-model="translationSettings.promptStandard"
-                  :placeholder="PROMPT_DEFAULTS.standard"
-                />
+            <!-- Standard prompt -->
+            <div class="prompt-editor">
+              <div class="prompt-editor__header">
+                <span class="prompt-editor__title">标准翻译提示词</span>
+                <button
+                  v-if="translationSettings.promptStandard"
+                  class="reset-btn" @click="translationSettings.promptStandard = ''"
+                >恢复默认</button>
               </div>
+              <textarea
+                class="prompt-editor__textarea"
+                v-model="translationSettings.promptStandard"
+                :placeholder="PROMPT_DEFAULTS.standard"
+              />
+            </div>
 
-              <!-- Reflective prompt -->
-              <div class="config-field">
-                <div class="prompt-field-header">
-                  <label class="field-label">反思翻译提示词</label>
-                  <button
-                    v-if="translationSettings.promptReflective"
-                    class="reset-btn" @click="translationSettings.promptReflective = ''"
-                  >恢复默认</button>
-                </div>
-                <textarea
-                  class="field-textarea" rows="5"
-                  v-model="translationSettings.promptReflective"
-                  :placeholder="PROMPT_DEFAULTS.reflective"
-                />
+            <!-- Reflective prompt -->
+            <div class="prompt-editor">
+              <div class="prompt-editor__header">
+                <span class="prompt-editor__title">反思翻译提示词</span>
+                <button
+                  v-if="translationSettings.promptReflective"
+                  class="reset-btn" @click="translationSettings.promptReflective = ''"
+                >恢复默认</button>
               </div>
+              <textarea
+                class="prompt-editor__textarea"
+                v-model="translationSettings.promptReflective"
+                :placeholder="PROMPT_DEFAULTS.reflective"
+              />
+            </div>
 
-              <!-- Optimize prompt -->
-              <div class="config-field">
-                <div class="prompt-field-header">
-                  <label class="field-label">优化阶段提示词</label>
-                  <button
-                    v-if="translationSettings.promptOptimize"
-                    class="reset-btn" @click="translationSettings.promptOptimize = ''"
-                  >恢复默认</button>
-                </div>
-                <textarea
-                  class="field-textarea" rows="4"
-                  v-model="translationSettings.promptOptimize"
-                  :placeholder="PROMPT_DEFAULTS.optimize"
-                />
+            <!-- Optimize prompt -->
+            <div class="prompt-editor">
+              <div class="prompt-editor__header">
+                <span class="prompt-editor__title">优化阶段提示词</span>
+                <button
+                  v-if="translationSettings.promptOptimize"
+                  class="reset-btn" @click="translationSettings.promptOptimize = ''"
+                >恢复默认</button>
               </div>
+              <textarea
+                class="prompt-editor__textarea"
+                v-model="translationSettings.promptOptimize"
+                :placeholder="PROMPT_DEFAULTS.optimize"
+              />
             </div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- Appearance -->
+    <section class="settings-section">
+      <h2 class="section-title">外观</h2>
+      <div class="setting-item">
+        <span class="setting-label">主题</span>
+        <div class="theme-options">
+          <button
+            v-for="opt in themeOptions"
+            :key="opt.value"
+            class="theme-card"
+            :class="{ active: settings.theme === opt.value }"
+            @click="setTheme(opt.value)"
+          >
+            <component :is="opt.icon" />
+            <span>{{ opt.label }}</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- System -->
+    <section class="settings-section">
+      <h2 class="section-title">系统</h2>
+      <div class="setting-item row">
+        <div class="setting-info">
+          <span class="setting-label">关闭时最小化到托盘</span>
+          <span class="setting-desc">关闭窗口时应用将最小化到系统托盘，而非退出应用</span>
+        </div>
+        <label class="toggle">
+          <input
+            type="checkbox"
+            :checked="settings.closeToTray"
+            @change="setCloseToTray(($event.target as HTMLInputElement).checked)"
+          />
+          <span class="toggle-slider" />
+        </label>
       </div>
     </section>
   </div>
@@ -650,6 +665,7 @@ function togglePassword(key: string) {
   flex-direction: column;
   gap: 24px;
   width: 100%;
+  padding-bottom: 32px;
 }
 
 .settings-section {
@@ -661,11 +677,12 @@ function togglePassword(key: string) {
 
 .section-title {
   font-size: 13px;
-  font-weight: 500;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.03em;
   margin-bottom: 2px;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
 }
 
 .setting-item {
@@ -940,6 +957,8 @@ function togglePassword(key: string) {
 
 .field-select,
 .field-input {
+  width: 100%;
+  box-sizing: border-box;
   padding: 8px 12px;
   background: var(--bg-base);
   border: 1px solid var(--border);
@@ -1205,6 +1224,8 @@ function togglePassword(key: string) {
 }
 
 .field-textarea {
+  width: 100%;
+  box-sizing: border-box;
   padding: 8px 12px;
   background: var(--bg-base);
   border: 1px solid var(--border);
@@ -1223,8 +1244,7 @@ function togglePassword(key: string) {
 
 /* Prompt section (collapsible) */
 .prompt-section {
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
+  padding-top: 0;
 }
 
 .prompt-section__toggle {
@@ -1257,13 +1277,56 @@ function togglePassword(key: string) {
 .prompt-section__body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   margin-top: 12px;
 }
 
-.prompt-field-header {
+/* Prompt editor card */
+.prompt-editor {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.prompt-editor__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 7px 12px;
+  background: var(--bg-base);
+  border-bottom: 1px solid var(--border);
+}
+
+.prompt-editor__title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  letter-spacing: 0.03em;
+}
+
+.prompt-editor__textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 180px;
+  padding: 12px;
+  background: var(--bg-elevated);
+  border: none;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  line-height: 1.65;
+  outline: none;
+  resize: vertical;
+  transition: background 0.15s ease;
+}
+
+.prompt-editor__textarea:focus {
+  background: var(--bg-base);
+}
+
+.prompt-editor__textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
 }
 </style>
