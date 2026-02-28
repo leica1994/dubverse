@@ -5,6 +5,7 @@ import "./styles/variables.css"
 import { useSettings, initSettings } from "./composables/useSettings"
 import { initTranscriptionSettings } from "./composables/useTranscriptionSettings"
 import { getAllConfig } from "./composables/useDatabase"
+import { useAiConfigs } from "./composables/useAiConfigs"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 
 async function bootstrap() {
@@ -26,6 +27,10 @@ async function bootstrap() {
   } catch (err) {
     console.error("[bootstrap] DB load failed, using defaults", err)
   }
+
+  // 4. Load AI configs
+  const { loadAiConfigs } = useAiConfigs()
+  await loadAiConfigs()
 
   // 4. Bind close-to-tray window event
   getCurrentWindow().onCloseRequested(async (event) => {

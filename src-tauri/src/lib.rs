@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod ai_pool;
 
 use db::connection::{DbState, open};
 use db::migration;
@@ -73,6 +74,12 @@ pub fn run() {
             commands::transcribe::cmd_transcribe_bcut,
             commands::transcribe::cmd_save_subtitles,
             commands::transcribe::cmd_pick_video_file,
+            commands::ai_config::cmd_get_ai_configs,
+            commands::ai_config::cmd_create_ai_config,
+            commands::ai_config::cmd_update_ai_config,
+            commands::ai_config::cmd_delete_ai_config,
+            commands::ai_config::cmd_set_default_ai_config,
+            commands::ai_config::cmd_test_ai_connection,
         ])
         .setup(|app| {
             // Resolve data directory: {exe_dir}/dubverse_data/
@@ -84,6 +91,7 @@ pub fn run() {
             migration::run(&conn).expect("run migrations");
             app.manage(DbState(Mutex::new(conn)));
             app.manage(DataDirState(data_dir));
+            app.manage(ai_pool::AiPoolManager::new());
 
             // Set window icon
             if let Some(window) = app.get_webview_window("main") {

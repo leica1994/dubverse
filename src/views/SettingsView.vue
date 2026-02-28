@@ -2,7 +2,10 @@
 import { computed, ref } from 'vue'
 import { useSettings } from '../composables/useSettings'
 import { useTranscriptionSettings } from '../composables/useTranscriptionSettings'
+import { useAiConfigs } from '../composables/useAiConfigs'
 import type { TranscriptionProviderId } from '../types/transcription'
+import type { AiConfig } from '../types/ai-config'
+import { AI_CONFIG_DEFAULTS } from '../types/ai-config'
 import IconSun from '../components/icons/IconSun.vue'
 import IconMoon from '../components/icons/IconMoon.vue'
 import IconMonitor from '../components/icons/IconMonitor.vue'
@@ -25,6 +28,91 @@ const themeOptions = [
 ]
 
 const configErrors = computed(() => validateActive().errors)
+
+// ── AI Configs ────────────────────────────────────────────────────────────────
+
+const {
+  aiConfigs,
+  createAiConfig,
+  updateAiConfig,
+  deleteAiConfig,
+  setDefaultAiConfig,
+  testAiConnection,
+} = useAiConfigs()
+
+type FormMode = 'create' | 'edit'
+const aiFormVisible = ref(false)
+const aiFormMode = ref<FormMode>('create')
+const aiFormData = ref<AiConfig>({ id: '', ...AI_CONFIG_DEFAULTS })
+const aiFormShowKey = ref(false)
+const aiFormTesting = ref(false)
+const aiFormTestResult = ref('')
+const aiFormTestError = ref('')
+const aiFormSaving = ref(false)
+
+function openCreateForm() {
+  aiFormMode.value = 'create'
+  aiFormData.value = { id: crypto.randomUUID(), ...AI_CONFIG_DEFAULTS }
+  aiFormShowKey.value = false
+  aiFormTestResult.value = ''
+  aiFormTestError.value = ''
+  aiFormVisible.value = true
+}
+
+function openEditForm(config: AiConfig) {
+  aiFormMode.value = 'edit'
+  aiFormData.value = { ...config }
+  aiFormShowKey.value = false
+  aiFormTestResult.value = ''
+  aiFormTestError.value = ''
+  aiFormVisible.value = true
+}
+
+function cancelForm() {
+  aiFormVisible.value = false
+}
+
+async function saveAiForm() {
+  aiFormSaving.value = true
+  try {
+    if (aiFormMode.value === 'create') {
+      await createAiConfig(aiFormData.value)
+    } else {
+      await updateAiConfig(aiFormData.value)
+    }
+    aiFormVisible.value = false
+  } catch (err) {
+    console.error('[SettingsView] save ai config failed', err)
+  } finally {
+    aiFormSaving.value = false
+  }
+}
+
+async function onTestConnection() {
+  aiFormTesting.value = true
+  aiFormTestResult.value = ''
+  aiFormTestError.value = ''
+  try {
+    const msg = await testAiConnection(
+      aiFormData.value.baseUrl,
+      aiFormData.value.apiKey,
+      aiFormData.value.model,
+    )
+    aiFormTestResult.value = msg
+  } catch (err) {
+    aiFormTestError.value = String(err)
+  } finally {
+    aiFormTesting.value = false
+  }
+}
+
+async function onDeleteConfig(id: string) {
+  await deleteAiConfig(id)
+}
+
+async function onSetDefault(id: string) {
+  await setDefaultAiConfig(id)
+}
 
 const currentConfig = computed(
   () => transcriptionSettings.value.configs[transcriptionSettings.value.activeProviderId] as Record<string, unknown>
@@ -93,8 +181,7 @@ function togglePassword(key: string) {
     </section>
 
     <!-- Transcription Model -->
-    <section class="settings-section">
-      <h2 class="section-title">转录模型</h2>
+    <section class="settings-section">      <h2 class="section-title">转录模型</h2>
 
       <!-- Provider selection -->
       <div class="setting-item">
@@ -208,6 +295,146 @@ function togglePassword(key: string) {
 
             <span v-if="configErrors[field.key]" class="field-error-msg">{{ configErrors[field.key] }}</span>
             <span v-else-if="field.hint" class="field-hint">{{ field.hint }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI Models -->
+    <section class="settings-section">
+      <h2 class="section-title">AI 模型</h2>
+
+      <!-- Config list -->
+      <div class="setting-item" v-if="aiConfigs.length > 0">
+        <div class="ai-config-list">
+          <div
+            v-for="cfg in aiConfigs"
+            :key="cfg.id"
+            class="ai-config-item"
+          >
+            <div class="ai-config-info">
+              <span class="ai-config-title">{{ cfg.title || '未命名' }}</span>
+              <span class="ai-config-meta">{{ cfg.model }} · {{ cfg.baseUrl.replace(/https?:\/\//, '') }}</span>
+            </div>
+            <div class="ai-config-actions">
+              <span v-if="cfg.isDefault" class="badge--default">默认</span>
+              <button
+                v-else
+                class="ai-action-btn"
+                @click="onSetDefault(cfg.id)"
+                title="设为默认"
+              >设为默认</button>
+              <button class="ai-action-btn" @click="openEditForm(cfg)" title="编辑">编辑</button>
+              <button
+                class="ai-action-btn ai-action-btn--danger"
+                @click="onDeleteConfig(cfg.id)"
+                title="删除"
+              >删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Empty state -->
+      <div class="setting-item ai-empty" v-else>
+        <span class="ai-empty-text">暂无 AI 配置，点击下方按钮添加</span>
+      </div>
+
+      <!-- Add button -->
+      <button class="add-ai-btn" @click="openCreateForm" v-if="!aiFormVisible">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        添加 AI 配置
+      </button>
+
+      <!-- Inline form -->
+      <div class="setting-item ai-form" v-if="aiFormVisible">
+        <div class="config-panel-header">
+          <span class="config-panel-title">{{ aiFormMode === 'create' ? '添加 AI 配置' : '编辑 AI 配置' }}</span>
+          <button class="reset-btn" @click="cancelForm">取消</button>
+        </div>
+
+        <div class="config-fields">
+          <!-- Title -->
+          <div class="config-field">
+            <label class="field-label">名称 <span class="field-required">*</span></label>
+            <input type="text" class="field-input" v-model="aiFormData.title" placeholder="如：OpenAI GPT-4o" />
+          </div>
+
+          <!-- Base URL -->
+          <div class="config-field">
+            <label class="field-label">API 地址</label>
+            <input type="text" class="field-input" v-model="aiFormData.baseUrl" placeholder="https://api.openai.com/v1" />
+          </div>
+
+          <!-- API Key -->
+          <div class="config-field">
+            <label class="field-label">API Key</label>
+            <div class="password-wrapper">
+              <input
+                :type="aiFormShowKey ? 'text' : 'password'"
+                class="field-input"
+                v-model="aiFormData.apiKey"
+                placeholder="sk-..."
+              />
+              <button type="button" class="password-toggle" @click="aiFormShowKey = !aiFormShowKey" :title="aiFormShowKey ? '隐藏' : '显示'">
+                <svg v-if="aiFormShowKey" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Model -->
+          <div class="config-field">
+            <label class="field-label">模型</label>
+            <input type="text" class="field-input" v-model="aiFormData.model" placeholder="gpt-4o-mini" />
+          </div>
+
+          <!-- Numeric row -->
+          <div class="ai-form-row">
+            <div class="config-field">
+              <label class="field-label">并发数 (1–10)</label>
+              <input
+                type="number" class="field-input field-input--number"
+                v-model.number="aiFormData.concurrentLimit"
+                min="1" max="10"
+              />
+            </div>
+            <div class="config-field">
+              <label class="field-label">超时 (秒, 0–600)</label>
+              <input
+                type="number" class="field-input field-input--number"
+                v-model.number="aiFormData.requestTimeout"
+                min="0" max="600"
+              />
+            </div>
+            <div class="config-field">
+              <label class="field-label">限速 (次/分, 0=不限)</label>
+              <input
+                type="number" class="field-input field-input--number"
+                v-model.number="aiFormData.rateLimit"
+                min="0" max="1000"
+              />
+            </div>
+          </div>
+
+          <!-- Test + Save row -->
+          <div class="ai-form-actions">
+            <button class="ai-test-btn" @click="onTestConnection" :disabled="aiFormTesting">
+              {{ aiFormTesting ? '测试中…' : '测试连接' }}
+            </button>
+            <span v-if="aiFormTestResult" class="ai-test-ok">{{ aiFormTestResult }}</span>
+            <span v-if="aiFormTestError" class="ai-test-err">{{ aiFormTestError }}</span>
+            <button
+              class="ai-save-btn"
+              @click="saveAiForm"
+              :disabled="aiFormSaving || !aiFormData.title"
+            >
+              {{ aiFormSaving ? '保存中…' : '保存' }}
+            </button>
           </div>
         </div>
       </div>
@@ -551,6 +778,11 @@ function togglePassword(key: string) {
   padding-right: 38px;
 }
 
+.password-wrapper input::-ms-reveal,
+.password-wrapper input::-ms-clear {
+  display: none;
+}
+
 .password-toggle {
   position: absolute;
   right: 10px;
@@ -566,5 +798,190 @@ function togglePassword(key: string) {
 
 .password-toggle:hover {
   color: var(--text-secondary);
+}
+
+/* AI Configs */
+.ai-config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-config-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+}
+
+.ai-config-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-config-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.ai-config-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-config-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.badge--default {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.ai-action-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ai-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ai-action-btn--danger:hover {
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+
+.ai-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.ai-empty-text {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.add-ai-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s ease;
+  align-self: flex-start;
+}
+
+.add-ai-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ai-form {
+  margin-top: 0;
+}
+
+.ai-form-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.ai-form-row .config-field {
+  flex: 1;
+  min-width: 120px;
+}
+
+.ai-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.ai-test-btn {
+  padding: 7px 14px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s ease;
+}
+
+.ai-test-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ai-test-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-test-ok {
+  font-size: 12px;
+  color: var(--status-success);
+}
+
+.ai-test-err {
+  font-size: 12px;
+  color: var(--status-error);
+  flex: 1;
+}
+
+.ai-save-btn {
+  margin-left: auto;
+  padding: 7px 20px;
+  border-radius: 7px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: opacity 0.15s ease;
+}
+
+.ai-save-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.ai-save-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 </style>
