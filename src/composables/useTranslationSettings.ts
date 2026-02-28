@@ -12,6 +12,10 @@ interface TranslationSettings {
   forbidden: string
   examples: string
   customPrompt: string
+  promptCorrection: string
+  promptStandard: string
+  promptReflective: string
+  promptOptimize: string
 }
 
 const defaults: TranslationSettings = {
@@ -25,6 +29,10 @@ const defaults: TranslationSettings = {
   forbidden: '',
   examples: '',
   customPrompt: '',
+  promptCorrection: '',
+  promptStandard: '',
+  promptReflective: '',
+  promptOptimize: '',
 }
 
 const translationSettings = ref<TranslationSettings>({ ...defaults })
@@ -41,6 +49,10 @@ const KEY_MAP: Record<keyof TranslationSettings, string> = {
   forbidden: 'translation.forbidden',
   examples: 'translation.examples',
   customPrompt: 'translation.custom_prompt',
+  promptCorrection: 'translation.prompt.correction',
+  promptStandard: 'translation.prompt.standard',
+  promptReflective: 'translation.prompt.reflective',
+  promptOptimize: 'translation.prompt.optimize',
 }
 
 export async function initTranslationSettings(dbConfig: Record<string, string>) {
@@ -55,6 +67,10 @@ export async function initTranslationSettings(dbConfig: Record<string, string>) 
     forbidden: dbConfig[KEY_MAP.forbidden] ?? '',
     examples: dbConfig[KEY_MAP.examples] ?? '',
     customPrompt: dbConfig[KEY_MAP.customPrompt] ?? '',
+    promptCorrection: dbConfig[KEY_MAP.promptCorrection] ?? '',
+    promptStandard: dbConfig[KEY_MAP.promptStandard] ?? '',
+    promptReflective: dbConfig[KEY_MAP.promptReflective] ?? '',
+    promptOptimize: dbConfig[KEY_MAP.promptOptimize] ?? '',
   }
   isLoaded.value = true
 }
@@ -73,6 +89,10 @@ watch(
     await setConfig(KEY_MAP.forbidden, val.forbidden)
     await setConfig(KEY_MAP.examples, val.examples)
     await setConfig(KEY_MAP.customPrompt, val.customPrompt)
+    await setConfig(KEY_MAP.promptCorrection, val.promptCorrection)
+    await setConfig(KEY_MAP.promptStandard, val.promptStandard)
+    await setConfig(KEY_MAP.promptReflective, val.promptReflective)
+    await setConfig(KEY_MAP.promptOptimize, val.promptOptimize)
   },
   { deep: true },
 )

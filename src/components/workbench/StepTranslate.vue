@@ -54,6 +54,10 @@ async function startTranslation() {
       forbidden: ts.forbidden,
       examples: ts.examples,
       customPrompt: ts.customPrompt,
+      promptCorrection: ts.promptCorrection,
+      promptStandard: ts.promptStandard,
+      promptReflective: ts.promptReflective,
+      promptOptimize: ts.promptOptimize,
     })
     translatedSubtitles.value = result
     setStepStatus(2, 'completed')

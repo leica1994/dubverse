@@ -7,6 +7,7 @@ import { useAiConfigs } from '../composables/useAiConfigs'
 import type { TranscriptionProviderId } from '../types/transcription'
 import type { AiConfig } from '../types/ai-config'
 import { AI_CONFIG_DEFAULTS } from '../types/ai-config'
+import { PROMPT_DEFAULTS } from '../types/translation-prompts'
 import IconSun from '../components/icons/IconSun.vue'
 import IconMoon from '../components/icons/IconMoon.vue'
 import IconMonitor from '../components/icons/IconMonitor.vue'
@@ -135,6 +136,8 @@ function onNumberInput(key: string, raw: string, min: number, max: number) {
     updateActiveConfig(key, Math.min(max, Math.max(min, n)))
   }
 }
+
+const promptSectionCollapsed = ref(true)
 
 const showPassword = ref<Record<string, boolean>>({})
 function togglePassword(key: string) {
@@ -555,6 +558,85 @@ function togglePassword(key: string) {
               v-model="translationSettings.customPrompt"
               placeholder="额外的翻译指令..."
             />
+          </div>
+
+          <!-- Advanced prompt config (collapsible) -->
+          <div class="prompt-section">
+            <button class="prompt-section__toggle" @click="promptSectionCollapsed = !promptSectionCollapsed">
+              <svg
+                class="prompt-section__arrow"
+                :class="{ expanded: !promptSectionCollapsed }"
+                xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+              ><polyline points="9 18 15 12 9 6"/></svg>
+              <span>高级提示词配置</span>
+            </button>
+
+            <div v-if="!promptSectionCollapsed" class="prompt-section__body">
+              <!-- Correction prompt -->
+              <div class="config-field">
+                <div class="prompt-field-header">
+                  <label class="field-label">校正阶段提示词</label>
+                  <button
+                    v-if="translationSettings.promptCorrection"
+                    class="reset-btn" @click="translationSettings.promptCorrection = ''"
+                  >恢复默认</button>
+                </div>
+                <textarea
+                  class="field-textarea" rows="4"
+                  v-model="translationSettings.promptCorrection"
+                  :placeholder="PROMPT_DEFAULTS.correction"
+                />
+              </div>
+
+              <!-- Standard prompt -->
+              <div class="config-field">
+                <div class="prompt-field-header">
+                  <label class="field-label">标准翻译提示词</label>
+                  <button
+                    v-if="translationSettings.promptStandard"
+                    class="reset-btn" @click="translationSettings.promptStandard = ''"
+                  >恢复默认</button>
+                </div>
+                <textarea
+                  class="field-textarea" rows="4"
+                  v-model="translationSettings.promptStandard"
+                  :placeholder="PROMPT_DEFAULTS.standard"
+                />
+              </div>
+
+              <!-- Reflective prompt -->
+              <div class="config-field">
+                <div class="prompt-field-header">
+                  <label class="field-label">反思翻译提示词</label>
+                  <button
+                    v-if="translationSettings.promptReflective"
+                    class="reset-btn" @click="translationSettings.promptReflective = ''"
+                  >恢复默认</button>
+                </div>
+                <textarea
+                  class="field-textarea" rows="5"
+                  v-model="translationSettings.promptReflective"
+                  :placeholder="PROMPT_DEFAULTS.reflective"
+                />
+              </div>
+
+              <!-- Optimize prompt -->
+              <div class="config-field">
+                <div class="prompt-field-header">
+                  <label class="field-label">优化阶段提示词</label>
+                  <button
+                    v-if="translationSettings.promptOptimize"
+                    class="reset-btn" @click="translationSettings.promptOptimize = ''"
+                  >恢复默认</button>
+                </div>
+                <textarea
+                  class="field-textarea" rows="4"
+                  v-model="translationSettings.promptOptimize"
+                  :placeholder="PROMPT_DEFAULTS.optimize"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1137,5 +1219,51 @@ function togglePassword(key: string) {
 
 .field-textarea:focus {
   border-color: var(--accent);
+}
+
+/* Prompt section (collapsible) */
+.prompt-section {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.prompt-section__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 0;
+  transition: color 0.15s ease;
+}
+
+.prompt-section__toggle:hover {
+  color: var(--text-primary);
+}
+
+.prompt-section__arrow {
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.prompt-section__arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.prompt-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.prompt-field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 </style>

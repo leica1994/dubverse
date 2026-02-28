@@ -43,6 +43,10 @@ struct TranslateOpts {
     forbidden: String,
     examples: String,
     custom_prompt: String,
+    prompt_correction: String,
+    prompt_standard: String,
+    prompt_reflective: String,
+    prompt_optimize: String,
 }
 
 // AI config resolved from DB
@@ -65,38 +69,21 @@ const JSON_RULES: &str = r#"
 - Never merge, split, or omit any entry
 - Output ONLY the JSON object, no extra text or explanation"#;
 
-const CORRECTION_SYSTEM_PROMPT: &str = r#"You are a subtitle correction assistant. Fix ASR transcription errors including:
-- Misrecognized words and homophones
-- Missing or incorrect punctuation
-- Obvious spelling mistakes
-Keep the ORIGINAL language — do NOT translate.
-{configurable_components}
-"#;
+const DEFAULT_CORRECTION_CORE: &str = "You are a subtitle correction assistant. Fix ASR transcription errors including:\n- Misrecognized words and homophones\n- Missing or incorrect punctuation\n- Obvious spelling mistakes\nKeep the ORIGINAL language — do NOT translate.";
 
-const TRANSLATE_SYSTEM_PROMPT: &str = r#"You are a professional subtitle translator. Translate the following subtitles to {target_language}.
-- Preserve the original meaning, tone, and style
-- Use natural expressions appropriate for the target language
-- Keep proper nouns unless they have well-known translations
-{configurable_components}
-"#;
+const DEFAULT_STANDARD_CORE: &str = "You are a professional subtitle translator.\n- Preserve the original meaning, tone, and style\n- Use natural expressions appropriate for the target language\n- Keep proper nouns unless they have well-known translations";
 
-const REFLECTIVE_SYSTEM_PROMPT: &str = r#"You are an expert subtitle translator. For each subtitle, internally perform these 4 steps (do NOT output intermediate steps):
-1. Literal translation to {target_language}
-2. Free/idiomatic translation
-3. Compare both, revise for accuracy and naturalness
-4. Produce the final polished translation
+const DEFAULT_REFLECTIVE_CORE: &str = "You are an expert subtitle translator. For each subtitle, internally perform these 4 steps (do NOT output intermediate steps):\n1. Literal translation\n2. Free/idiomatic translation\n3. Compare both, revise for accuracy and naturalness\n4. Produce the final polished translation\n\nOutput ONLY the final result.";
 
-Output ONLY the final result.
-{configurable_components}
-"#;
+const DEFAULT_OPTIMIZE_CORE: &str = "You are a subtitle polishing assistant. Improve the already-translated subtitles:\n- Enhance fluency and naturalness\n- Fix awkward phrasing\n- Ensure consistency in terminology and style\n- Do NOT change the meaning";
 
-const OPTIMIZE_SYSTEM_PROMPT: &str = r#"You are a subtitle polishing assistant. Improve the already-translated subtitles in {target_language}:
-- Enhance fluency and naturalness
-- Fix awkward phrasing
-- Ensure consistency in terminology and style
-- Do NOT change the meaning
-{configurable_components}
-"#;
+#[derive(Clone, Copy)]
+enum Phase {
+    Correction,
+    Standard,
+    Reflective,
+    Optimize,
+}
 
 // ── Prompt Builder ───────────────────────────────────────────────────────────
 
@@ -133,12 +120,34 @@ fn build_configurable_section(opts: &TranslateOpts) -> String {
     }
 }
 
-fn build_system_prompt(template: &str, opts: &TranslateOpts) -> String {
+fn build_phase_prompt(phase: Phase, opts: &TranslateOpts) -> String {
     let section = build_configurable_section(opts);
-    template
-        .replace("{target_language}", &opts.target_language)
-        .replace("{configurable_components}", &section)
-        + JSON_RULES
+    let user_core = match phase {
+        Phase::Correction => {
+            if opts.prompt_correction.is_empty() { DEFAULT_CORRECTION_CORE } else { &opts.prompt_correction }
+        }
+        Phase::Standard => {
+            if opts.prompt_standard.is_empty() { DEFAULT_STANDARD_CORE } else { &opts.prompt_standard }
+        }
+        Phase::Reflective => {
+            if opts.prompt_reflective.is_empty() { DEFAULT_REFLECTIVE_CORE } else { &opts.prompt_reflective }
+        }
+        Phase::Optimize => {
+            if opts.prompt_optimize.is_empty() { DEFAULT_OPTIMIZE_CORE } else { &opts.prompt_optimize }
+        }
+    };
+
+    let prefix = match phase {
+        Phase::Correction => String::new(),
+        Phase::Standard | Phase::Reflective => {
+            format!("Translate the following subtitles to {}.\n\n", opts.target_language)
+        }
+        Phase::Optimize => {
+            format!("Target language: {}\n\n", opts.target_language)
+        }
+    };
+
+    format!("{prefix}{user_core}\n{section}{JSON_RULES}")
 }
 
 // ── API Call ─────────────────────────────────────────────────────────────────
@@ -614,7 +623,7 @@ async fn run_pipeline(
 
     // Phase 1: Correction (conservative temperature)
     if opts.correction {
-        let prompt = build_system_prompt(CORRECTION_SYSTEM_PROMPT, opts);
+        let prompt = build_phase_prompt(Phase::Correction, opts);
         let base = phase_idx as f64 * phase_weight;
         current = process_batches(
             app, db, pool, &client, cfg, cancel, &prompt, &current, project_dir,
@@ -626,12 +635,12 @@ async fn run_pipeline(
 
     // Phase 2: Translation (standard temperature)
     {
-        let template = if opts.prompt_type == "reflective" {
-            REFLECTIVE_SYSTEM_PROMPT
+        let phase = if opts.prompt_type == "reflective" {
+            Phase::Reflective
         } else {
-            TRANSLATE_SYSTEM_PROMPT
+            Phase::Standard
         };
-        let prompt = build_system_prompt(template, opts);
+        let prompt = build_phase_prompt(phase, opts);
         let base = phase_idx as f64 * phase_weight;
         current = process_batches(
             app, db, pool, &client, cfg, cancel, &prompt, &current, project_dir,
@@ -644,7 +653,7 @@ async fn run_pipeline(
     // Phase 3: Optimization (creative temperature)
     if opts.optimization {
         let translation_script = dominant_script(&current);
-        let prompt = build_system_prompt(OPTIMIZE_SYSTEM_PROMPT, opts);
+        let prompt = build_phase_prompt(Phase::Optimize, opts);
         let base = phase_idx as f64 * phase_weight;
         let optimized = process_batches(
             app, db, pool, &client, cfg, cancel, &prompt, &current, project_dir,
@@ -700,6 +709,10 @@ pub async fn cmd_start_translation(
     forbidden: String,
     examples: String,
     custom_prompt: String,
+    prompt_correction: String,
+    prompt_standard: String,
+    prompt_reflective: String,
+    prompt_optimize: String,
 ) -> Result<Vec<SubtitleItem>, String> {
     // Reset cancel flag
     cancel.0.store(false, Ordering::Relaxed);
@@ -736,6 +749,10 @@ pub async fn cmd_start_translation(
         forbidden,
         examples,
         custom_prompt,
+        prompt_correction,
+        prompt_standard,
+        prompt_reflective,
+        prompt_optimize,
     };
 
     run_pipeline(&app, &db, &pool, &cancel.0, &subtitles, &project_dir, &opts, &resolved).await
