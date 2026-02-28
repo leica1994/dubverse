@@ -80,27 +80,6 @@ const translationRows = computed(() =>
 
 const translatedCount = computed(() => liveTranslations.value.size)
 
-// ── Scroll sync ─────────────────────────────────────────────────────────────
-
-const leftCol = ref<HTMLElement>()
-const rightCol = ref<HTMLElement>()
-let syncing = false
-
-function syncScroll(source: HTMLElement, target: HTMLElement) {
-  if (syncing) return
-  syncing = true
-  target.scrollTop = source.scrollTop
-  requestAnimationFrame(() => { syncing = false })
-}
-
-function onLeftScroll() {
-  if (leftCol.value && rightCol.value) syncScroll(leftCol.value, rightCol.value)
-}
-
-function onRightScroll() {
-  if (rightCol.value && leftCol.value) syncScroll(rightCol.value, leftCol.value)
-}
-
 // ── Translation control ─────────────────────────────────────────────────────
 
 async function startTranslation() {
@@ -248,27 +227,23 @@ onUnmounted(() => {
         </span>
       </div>
 
-      <!-- Dual column subtitle list -->
+      <!-- Paired subtitle list -->
       <div class="translate-subtitle-area">
-        <div class="translate-subtitle-header">
-          <span>原文 ({{ originalSubtitles.length }} 条)</span>
-          <span>翻译中 (<span class="translate-subtitle-count">{{ translatedCount }}</span>/{{ originalSubtitles.length }} 完成)</span>
-        </div>
         <div class="translate-subtitle-body">
-          <div ref="leftCol" class="translate-subtitle-col" @scroll="onLeftScroll">
-            <SubtitleRow
-              v-for="sub in originalSubtitles"
-              :key="sub.id"
-              :subtitle="sub"
-            />
+          <div class="translate-subtitle-header">
+            <span>原文 ({{ originalSubtitles.length }} 条)</span>
+            <span>翻译中 (<span class="translate-subtitle-count">{{ translatedCount }}</span>/{{ originalSubtitles.length }} 完成)</span>
           </div>
-          <div ref="rightCol" class="translate-subtitle-col" @scroll="onRightScroll">
-            <SubtitleRow
-              v-for="(sub, idx) in translationRows"
-              :key="sub.id"
-              :subtitle="sub"
-              :loading="!liveTranslations.has(originalSubtitles[idx]?.id)"
-            />
+          <div v-for="(sub, idx) in originalSubtitles" :key="sub.id" class="translate-subtitle-pair">
+            <div class="translate-subtitle-pair__cell">
+              <SubtitleRow :subtitle="sub" />
+            </div>
+            <div class="translate-subtitle-pair__cell translate-subtitle-pair__cell--right">
+              <SubtitleRow
+                :subtitle="translationRows[idx]"
+                :loading="!liveTranslations.has(sub.id)"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -487,8 +462,6 @@ onUnmounted(() => {
 }
 
 .translate-subtitle-area {
-  display: flex;
-  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -499,7 +472,9 @@ onUnmounted(() => {
   grid-template-columns: 1fr 1fr;
   border-bottom: 1px solid var(--border);
   background: var(--bg-elevated);
-  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .translate-subtitle-header span {
@@ -518,29 +493,31 @@ onUnmounted(() => {
 }
 
 .translate-subtitle-body {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.translate-subtitle-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
+  border-bottom: 1px solid var(--border);
 }
 
-.translate-subtitle-col {
-  overflow-y: auto;
-  min-height: 0;
+.translate-subtitle-pair__cell--right {
+  border-left: 1px solid var(--border);
 }
 
-.translate-subtitle-col:first-child {
-  border-right: 1px solid var(--border);
+.translate-subtitle-pair :deep(.subtitle-row) {
+  border-bottom: none;
 }
 
 @container workbench-root (max-width: 560px) {
-  .translate-subtitle-body {
+  .translate-subtitle-pair {
     grid-template-columns: 1fr;
   }
-  .translate-subtitle-col:first-child {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
+  .translate-subtitle-pair__cell--right {
+    border-left: none;
+    border-top: 1px solid var(--border);
   }
   .translate-subtitle-header {
     grid-template-columns: 1fr;

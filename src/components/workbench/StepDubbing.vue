@@ -217,12 +217,13 @@ function onCancel() {
         </template>
 
         <!-- Completed panel -->
-        <div v-else-if="isCompleted" class="done-panel">
-          <div class="done-card">
-            <div class="done-card__icon">✓</div>
+        <div v-else-if="isCompleted" class="done-card">
+          <div class="done-card__icon">✓</div>
+          <div class="done-card__body">
             <p class="done-card__title">配音完成</p>
             <p class="done-card__path">{{ dubbing.outputPath.value }}</p>
           </div>
+          <button class="btn btn--ghost" @click="onStartFresh">重新配音</button>
         </div>
       </div>
     </template>
@@ -352,8 +353,22 @@ function onCancel() {
   align-self: flex-start;
 }
 
+.btn--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  padding: 6px 14px;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.btn--ghost:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .btn--start {
-  align-self: flex-start;
+  width: 100%;
 }
 
 .btn:disabled {
@@ -361,37 +376,41 @@ function onCancel() {
   cursor: not-allowed;
 }
 
-.done-panel {
-  width: 100%;
-}
-
 .done-card {
-  padding: 32px 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
   background: var(--status-success-subtle);
   border: 1px solid var(--status-success);
   border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
 }
 
 .done-card__icon {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: var(--status-success);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 700;
+  flex-shrink: 0;
+}
+
+.done-card__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .done-card__title {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 500;
   color: var(--text-primary);
 }
@@ -400,7 +419,8 @@ function onCancel() {
   margin: 0;
   font-size: 12px;
   color: var(--text-muted);
-  word-break: break-all;
-  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

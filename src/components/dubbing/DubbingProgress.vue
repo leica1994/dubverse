@@ -87,21 +87,25 @@ function onRightScroll() {
 
 <template>
   <div class="dubbing-panel">
-    <!-- Phase bar: stage pills + cancel -->
+    <!-- Stage stepper + cancel -->
     <div class="phase-bar">
-      <div class="phase-pills">
-        <div
-          v-for="(stage, i) in STAGE_ORDER"
-          :key="stage"
-          class="phase-pill"
-          :class="`phase-pill--${pillStatus(stage)}`"
-        >
-          <span v-if="pillStatus(stage) === 'running'" class="phase-pill__spinner"></span>
-          <span v-else-if="pillStatus(stage) === 'completed'" class="phase-pill__check">✓</span>
-          <span v-else-if="pillStatus(stage) === 'failed'" class="phase-pill__x">✕</span>
-          <span class="phase-pill__num">{{ i + 1 }}</span>
-          {{ DUBBING_STAGE_LABELS[stage] }}
-        </div>
+      <div class="stage-stepper">
+        <template v-for="(stage, i) in STAGE_ORDER" :key="stage">
+          <div
+            v-if="i > 0"
+            class="stepper-connector"
+            :class="{ 'stepper-connector--done': pillStatus(STAGE_ORDER[i - 1]) === 'completed' }"
+          ></div>
+          <div class="stepper-step" :class="`stepper-step--${pillStatus(stage)}`">
+            <div class="stepper-node">
+              <span v-if="pillStatus(stage) === 'running'" class="stepper-spinner"></span>
+              <span v-else-if="pillStatus(stage) === 'completed'">✓</span>
+              <span v-else-if="pillStatus(stage) === 'failed'">✕</span>
+              <span v-else>{{ i + 1 }}</span>
+            </div>
+            <span class="stepper-label">{{ DUBBING_STAGE_LABELS[stage] }}</span>
+          </div>
+        </template>
       </div>
       <button class="btn btn--secondary btn--sm" @click="emit('cancel')">取消</button>
     </div>
@@ -191,74 +195,103 @@ function onRightScroll() {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 12px 20px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-elevated);
   flex-shrink: 0;
 }
 
-.phase-pills {
+/* ── Horizontal stepper ───────────────────────────────────────────────── */
+
+.stage-stepper {
   display: flex;
-  gap: 6px;
+  align-items: flex-start;
   flex: 1;
-  flex-wrap: wrap;
+  align-self: flex-start;
 }
 
-.phase-pill {
+.stepper-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.stepper-connector {
+  flex: 1;
+  height: 2px;
+  background: var(--border);
+  margin-top: 13px;
+  min-width: 8px;
+  transition: background 0.3s ease;
+}
+
+.stepper-connector--done {
+  background: var(--status-success);
+}
+
+.stepper-node {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: 20px;
+  justify-content: center;
   font-size: 12px;
-  font-weight: 500;
-  transition: all 0.2s ease;
-  border: 1px solid var(--border);
+  font-weight: 600;
   color: var(--text-muted);
   background: var(--bg-base);
+  flex-shrink: 0;
+  transition: all 0.2s ease;
 }
 
-.phase-pill--running {
+.stepper-step--running .stepper-node {
+  border-color: var(--accent);
   background: var(--accent);
   color: #fff;
-  border-color: transparent;
 }
 
-.phase-pill--completed {
-  background: transparent;
-  color: var(--status-success);
+.stepper-step--completed .stepper-node {
   border-color: var(--status-success);
+  background: var(--status-success);
+  color: #fff;
 }
 
-.phase-pill--failed {
-  background: transparent;
-  color: var(--status-error);
+.stepper-step--failed .stepper-node {
   border-color: var(--status-error);
+  background: var(--status-error);
+  color: #fff;
 }
 
-.phase-pill__num {
-  opacity: 0.7;
-  font-size: 10px;
+.stepper-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
-.phase-pill__spinner {
-  width: 10px;
-  height: 10px;
+.stepper-step--running .stepper-label {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.stepper-step--completed .stepper-label {
+  color: var(--status-success);
+}
+
+.stepper-step--failed .stepper-label {
+  color: var(--status-error);
+}
+
+.stepper-spinner {
+  width: 14px;
+  height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.4);
   border-top-color: #fff;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   flex-shrink: 0;
-}
-
-.phase-pill__check {
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.phase-pill__x {
-  font-size: 10px;
-  font-weight: 700;
 }
 
 @keyframes spin {

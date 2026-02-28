@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import type { Subtitle } from '@/types/workbench'
 import SubtitleRow from './SubtitleRow.vue'
 
@@ -12,29 +11,6 @@ const emit = defineEmits<{
   updateTranslation: [id: number, text: string]
 }>()
 
-const leftCol = ref<HTMLElement>()
-const rightCol = ref<HTMLElement>()
-let syncing = false
-
-function syncScroll(source: HTMLElement, target: HTMLElement) {
-  if (syncing) return
-  syncing = true
-  target.scrollTop = source.scrollTop
-  requestAnimationFrame(() => { syncing = false })
-}
-
-function onLeftScroll() {
-  if (leftCol.value && rightCol.value) {
-    syncScroll(leftCol.value, rightCol.value)
-  }
-}
-
-function onRightScroll() {
-  if (rightCol.value && leftCol.value) {
-    syncScroll(rightCol.value, leftCol.value)
-  }
-}
-
 function onUpdateTranslation(id: number, text: string) {
   emit('updateTranslation', id, text)
 }
@@ -42,26 +18,22 @@ function onUpdateTranslation(id: number, text: string) {
 
 <template>
   <div class="subtitle-editor">
-    <div class="subtitle-editor__header">
-      <span class="subtitle-editor__title">原文</span>
-      <span class="subtitle-editor__title">译文（可编辑）</span>
-    </div>
     <div class="subtitle-editor__body">
-      <div ref="leftCol" class="subtitle-editor__col" @scroll="onLeftScroll">
-        <SubtitleRow
-          v-for="sub in original"
-          :key="sub.id"
-          :subtitle="sub"
-        />
+      <div class="subtitle-editor__header">
+        <span class="subtitle-editor__title">原文</span>
+        <span class="subtitle-editor__title">译文（可编辑）</span>
       </div>
-      <div ref="rightCol" class="subtitle-editor__col" @scroll="onRightScroll">
-        <SubtitleRow
-          v-for="sub in translated"
-          :key="sub.id"
-          :subtitle="sub"
-          editable
-          @update="(text) => onUpdateTranslation(sub.id, text)"
-        />
+      <div v-for="(orig, i) in original" :key="orig.id" class="subtitle-pair">
+        <div class="subtitle-pair__cell">
+          <SubtitleRow :subtitle="orig" />
+        </div>
+        <div class="subtitle-pair__cell subtitle-pair__cell--right">
+          <SubtitleRow
+            :subtitle="translated[i]"
+            editable
+            @update="(text) => onUpdateTranslation(orig.id, text)"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -71,17 +43,20 @@ function onUpdateTranslation(id: number, text: string) {
 .subtitle-editor {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
   height: 100%;
+  overflow: hidden;
 }
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
 
 .subtitle-editor__header {
   display: grid;
   grid-template-columns: 1fr 1fr;
   border-bottom: 1px solid var(--border);
   background: var(--bg-elevated);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .subtitle-editor__title {
@@ -95,19 +70,46 @@ function onUpdateTranslation(id: number, text: string) {
   border-right: 1px solid var(--border);
 }
 
+/* ── Body (single scroll container) ─────────────────────────────────────── */
+
 .subtitle-editor__body {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
   flex: 1;
   min-height: 0;
-}
-
-.subtitle-editor__col {
   overflow-y: auto;
-  max-height: 400px;
 }
 
-.subtitle-editor__col:first-child {
-  border-right: 1px solid var(--border);
+/* ── Paired row ─────────────────────────────────────────────────────────── */
+
+.subtitle-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--border);
+}
+
+.subtitle-pair__cell--right {
+  border-left: 1px solid var(--border);
+}
+
+/* SubtitleRow内部不再需要自己的 border-bottom */
+.subtitle-pair :deep(.subtitle-row) {
+  border-bottom: none;
+  height: 100%;
+}
+
+/* ── Narrow width: stack vertically ──────────────────────────────────────── */
+
+@container workbench-root (max-width: 560px) {
+  .subtitle-editor__header,
+  .subtitle-pair {
+    grid-template-columns: 1fr;
+  }
+  .subtitle-editor__title:first-child {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .subtitle-pair__cell--right {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
 }
 </style>

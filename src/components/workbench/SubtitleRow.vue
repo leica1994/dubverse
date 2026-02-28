@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Subtitle } from '@/types/workbench'
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted, nextTick } from 'vue'
 
 const props = defineProps<{
   subtitle: Subtitle
@@ -14,6 +14,17 @@ const emit = defineEmits<{
 
 const justUpdated = ref(false)
 let flashTimer: ReturnType<typeof setTimeout> | null = null
+
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+
+function adjustHeight() {
+  if (!textareaRef.value) return
+  textareaRef.value.style.height = 'auto'
+  textareaRef.value.style.height = textareaRef.value.scrollHeight + 'px'
+}
+
+onMounted(() => nextTick(adjustHeight))
+watch(() => props.subtitle.text, () => nextTick(adjustHeight))
 
 watch(() => props.loading, (newVal, oldVal) => {
   if (oldVal === true && newVal === false) {
@@ -34,6 +45,7 @@ function formatTime(seconds: number): string {
 }
 
 function onInput(e: Event) {
+  adjustHeight()
   emit('update', (e.target as HTMLTextAreaElement).value)
 }
 </script>
@@ -45,9 +57,9 @@ function onInput(e: Event) {
     </span>
     <textarea
       v-if="editable"
+      ref="textareaRef"
       class="subtitle-row__text subtitle-row__text--editable"
       :value="subtitle.text"
-      rows="2"
       @input="onInput"
     />
     <p v-else-if="!loading" class="subtitle-row__text">{{ subtitle.text }}</p>
@@ -83,20 +95,30 @@ function onInput(e: Event) {
 }
 
 .subtitle-row__text--editable {
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
   color: var(--text-primary);
   font-family: inherit;
   font-size: 14px;
+  line-height: 1.5;
   resize: none;
   outline: none;
-  transition: border-color 0.15s ease;
+  overflow: hidden;
 }
 
-.subtitle-row__text--editable:focus {
-  border-color: var(--accent);
+.subtitle-row:has(.subtitle-row__text--editable):hover {
+  background: var(--bg-hover);
+  cursor: text;
+}
+
+.subtitle-row:has(.subtitle-row__text--editable:focus) {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .subtitle-row__text--loading {
