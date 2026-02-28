@@ -145,3 +145,46 @@ pub fn set_default_ai_config(conn: &Connection, id: &str) -> Result<()> {
     conn.execute("UPDATE ai_configs SET is_default = 1 WHERE id = ?1", [id])?;
     Ok(())
 }
+
+// ── Translation Progress ────────────────────────────────────────────────────
+
+pub fn get_translation_progress(
+    conn: &Connection,
+    project_dir: &str,
+    phase: &str,
+) -> Result<HashMap<i32, String>> {
+    let mut stmt = conn.prepare(
+        "SELECT subtitle_index, result_text FROM translation_progress WHERE project_dir = ?1 AND phase = ?2",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![project_dir, phase], |row| {
+        Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut map = HashMap::new();
+    for row in rows {
+        let (k, v) = row?;
+        map.insert(k, v);
+    }
+    Ok(map)
+}
+
+pub fn save_translation_progress(
+    conn: &Connection,
+    project_dir: &str,
+    subtitle_index: i32,
+    phase: &str,
+    result_text: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO translation_progress (project_dir, subtitle_index, phase, result_text) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![project_dir, subtitle_index, phase, result_text],
+    )?;
+    Ok(())
+}
+
+pub fn clear_translation_progress(conn: &Connection, project_dir: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM translation_progress WHERE project_dir = ?1",
+        [project_dir],
+    )?;
+    Ok(())
+}

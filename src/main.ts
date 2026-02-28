@@ -4,6 +4,7 @@ import router from "./router"
 import "./styles/variables.css"
 import { useSettings, initSettings } from "./composables/useSettings"
 import { initTranscriptionSettings } from "./composables/useTranscriptionSettings"
+import { initTranslationSettings } from "./composables/useTranslationSettings"
 import { getAllConfig } from "./composables/useDatabase"
 import { useAiConfigs } from "./composables/useAiConfigs"
 import { getCurrentWindow } from "@tauri-apps/api/window"
@@ -23,6 +24,7 @@ async function bootstrap() {
     const dbConfig = await getAllConfig()
     await initSettings(dbConfig)
     await initTranscriptionSettings(dbConfig)
+    await initTranslationSettings(dbConfig)
     applyTheme() // Re-apply with real theme value
   } catch (err) {
     console.error("[bootstrap] DB load failed, using defaults", err)

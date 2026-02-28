@@ -6,7 +6,8 @@ use db::connection::{DbState, open};
 use db::migration;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use tauri::image::Image;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -80,6 +81,9 @@ pub fn run() {
             commands::ai_config::cmd_delete_ai_config,
             commands::ai_config::cmd_set_default_ai_config,
             commands::ai_config::cmd_test_ai_connection,
+            commands::translate::cmd_start_translation,
+            commands::translate::cmd_cancel_translation,
+            commands::translate::cmd_clear_translation_progress,
         ])
         .setup(|app| {
             // Resolve data directory: {exe_dir}/dubverse_data/
@@ -92,6 +96,7 @@ pub fn run() {
             app.manage(DbState(Mutex::new(conn)));
             app.manage(DataDirState(data_dir));
             app.manage(ai_pool::AiPoolManager::new());
+            app.manage(commands::translate::TranslateCancelState(Arc::new(AtomicBool::new(false))));
 
             // Set window icon
             if let Some(window) = app.get_webview_window("main") {

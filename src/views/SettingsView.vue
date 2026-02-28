@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useSettings } from '../composables/useSettings'
 import { useTranscriptionSettings } from '../composables/useTranscriptionSettings'
+import { useTranslationSettings } from '../composables/useTranslationSettings'
 import { useAiConfigs } from '../composables/useAiConfigs'
 import type { TranscriptionProviderId } from '../types/transcription'
 import type { AiConfig } from '../types/ai-config'
@@ -20,6 +21,8 @@ const {
   validateActive,
   resetConfig,
 } = useTranscriptionSettings()
+
+const { translationSettings } = useTranslationSettings()
 
 const themeOptions = [
   { value: 'dark' as const, label: '深色', icon: IconMoon },
@@ -435,6 +438,123 @@ function togglePassword(key: string) {
             >
               {{ aiFormSaving ? '保存中…' : '保存' }}
             </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Translation Settings -->
+    <section class="settings-section">
+      <h2 class="section-title">翻译设置</h2>
+
+      <div class="setting-item">
+        <div class="config-fields">
+          <!-- Correction toggle -->
+          <div class="config-field">
+            <div class="field-row">
+              <div class="field-row__info">
+                <label class="field-label">校正阶段</label>
+                <span class="field-hint">翻译前先校正 ASR 转录错误</span>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" v-model="translationSettings.correction" />
+                <span class="toggle-slider" />
+              </label>
+            </div>
+          </div>
+
+          <!-- Optimization toggle -->
+          <div class="config-field">
+            <div class="field-row">
+              <div class="field-row__info">
+                <label class="field-label">优化阶段</label>
+                <span class="field-hint">翻译后润色提升流畅度</span>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" v-model="translationSettings.optimization" />
+                <span class="toggle-slider" />
+              </label>
+            </div>
+          </div>
+
+          <!-- Prompt type -->
+          <div class="config-field">
+            <label class="field-label">翻译模式</label>
+            <select class="field-select" v-model="translationSettings.promptType">
+              <option value="standard">标准翻译</option>
+              <option value="reflective">反思翻译（更高质量，更慢）</option>
+            </select>
+          </div>
+
+          <!-- Batch size -->
+          <div class="config-field">
+            <label class="field-label">每批字幕数</label>
+            <input
+              type="number" class="field-input field-input--number"
+              v-model.number="translationSettings.batchSize"
+              min="1" max="100"
+            />
+            <span class="field-hint">每次 API 调用处理的字幕条数，建议 10-50</span>
+          </div>
+
+          <!-- World building -->
+          <div class="config-field">
+            <label class="field-label">世界观 / 背景设定</label>
+            <textarea
+              class="field-textarea" rows="3"
+              v-model="translationSettings.worldBuilding"
+              placeholder="描述视频的背景、领域、角色等信息..."
+            />
+          </div>
+
+          <!-- Writing style -->
+          <div class="config-field">
+            <label class="field-label">文风要求</label>
+            <textarea
+              class="field-textarea" rows="2"
+              v-model="translationSettings.writingStyle"
+              placeholder="如：口语化、正式、学术..."
+            />
+          </div>
+
+          <!-- Glossary -->
+          <div class="config-field">
+            <label class="field-label">术语表</label>
+            <textarea
+              class="field-textarea" rows="3"
+              v-model="translationSettings.glossary"
+              placeholder="source → target，每行一条"
+            />
+          </div>
+
+          <!-- Forbidden -->
+          <div class="config-field">
+            <label class="field-label">禁用词</label>
+            <textarea
+              class="field-textarea" rows="2"
+              v-model="translationSettings.forbidden"
+              placeholder="不希望出现的词汇或翻译，每行一条"
+            />
+          </div>
+
+          <!-- Examples -->
+          <div class="config-field">
+            <label class="field-label">翻译示例</label>
+            <textarea
+              class="field-textarea" rows="3"
+              v-model="translationSettings.examples"
+              placeholder="提供原文 → 译文示例，帮助 AI 理解期望的翻译风格"
+            />
+          </div>
+
+          <!-- Custom prompt -->
+          <div class="config-field">
+            <label class="field-label">自定义提示词</label>
+            <textarea
+              class="field-textarea" rows="3"
+              v-model="translationSettings.customPrompt"
+              placeholder="额外的翻译指令..."
+            />
           </div>
         </div>
       </div>
@@ -983,5 +1103,39 @@ function togglePassword(key: string) {
 .ai-save-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.field-row__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.field-row__info .field-label {
+  margin-bottom: 0;
+}
+
+.field-textarea {
+  padding: 8px 12px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+  transition: border-color 0.15s ease;
+}
+
+.field-textarea:focus {
+  border-color: var(--accent);
 }
 </style>

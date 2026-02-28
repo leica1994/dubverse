@@ -1,63 +1,86 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import type { UnlistenFn } from '@tauri-apps/api/event'
 import { useWorkbench } from '@/composables/useWorkbench'
+import { useTranslationSettings } from '@/composables/useTranslationSettings'
+import { useAiConfigs } from '@/composables/useAiConfigs'
 import { LANGUAGES } from '@/types/workbench'
-import type { Subtitle } from '@/types/workbench'
 import ProgressBar from './ProgressBar.vue'
 
 const {
   targetLanguage, sourceLanguage, stepStatuses, setStepStatus,
-  originalSubtitles, translatedSubtitles, progress,
+  originalSubtitles, translatedSubtitles, progress, projectDir,
 } = useWorkbench()
 
-const translateEngine = ref('google')
-let cancelFlag = false
+const { translationSettings } = useTranslationSettings()
+const { aiConfigs } = useAiConfigs()
 
-function startTranslation() {
-  cancelFlag = false
+const defaultConfig = computed(() => aiConfigs.value.find(c => c.isDefault))
+const errorMsg = ref('')
+let unlisten: UnlistenFn | null = null
+
+async function startTranslation() {
+  if (!defaultConfig.value) {
+    errorMsg.value = '请先在设置中添加并设为默认 AI 配置'
+    return
+  }
+  errorMsg.value = ''
   setStepStatus(2, 'processing')
 
-  let elapsed = 0
-  const total = 2000
+  // Listen for progress events
+  unlisten = await listen<{ phase: string; batch: number; totalBatches: number; skipped: number; percent: number; message: string }>('translate:progress', (event) => {
+    progress.value = {
+      phase: event.payload.phase,
+      percent: event.payload.percent,
+      message: event.payload.message,
+    }
+  })
 
-  const interval = setInterval(() => {
-    if (cancelFlag) {
-      clearInterval(interval)
+  const ts = translationSettings.value
+  try {
+    const result = await invoke<Array<{ id: number; startTime: number; endTime: number; text: string }>>('cmd_start_translation', {
+      subtitles: originalSubtitles.value,
+      projectDir: projectDir.value,
+      targetLanguage: targetLanguage.value,
+      correction: ts.correction,
+      optimization: ts.optimization,
+      promptType: ts.promptType,
+      batchSize: ts.batchSize,
+      worldBuilding: ts.worldBuilding,
+      writingStyle: ts.writingStyle,
+      glossary: ts.glossary,
+      forbidden: ts.forbidden,
+      examples: ts.examples,
+      customPrompt: ts.customPrompt,
+    })
+    translatedSubtitles.value = result
+    setStepStatus(2, 'completed')
+    progress.value = { phase: '', percent: 100, message: '' }
+  } catch (err) {
+    const msg = String(err)
+    if (msg.includes('已取消')) {
       setStepStatus(2, 'ready')
       progress.value = { phase: '', percent: 0, message: '' }
-      return
+    } else {
+      errorMsg.value = msg
+      setStepStatus(2, 'ready')
+      progress.value = { phase: '', percent: 0, message: '' }
     }
-
-    elapsed += 50
-    progress.value = {
-      phase: '翻译处理',
-      percent: Math.min(100, (elapsed / total) * 100),
-      message: '翻译处理中...',
-    }
-
-    if (elapsed >= total) {
-      clearInterval(interval)
-      generateMockTranslation()
-      setStepStatus(2, 'completed')
-      progress.value = { phase: '', percent: 100, message: '' }
-    }
-  }, 50)
+  } finally {
+    unlisten?.()
+    unlisten = null
+  }
 }
 
-function cancelTranslation() {
-  cancelFlag = true
+async function cancelTranslation() {
+  await invoke('cmd_cancel_translation')
 }
 
-function generateMockTranslation() {
-  const mockTranslated: Subtitle[] = [
-    { id: 1, startTime: 0, endTime: 3.2, text: 'Welcome to our channel' },
-    { id: 2, startTime: 3.5, endTime: 6.8, text: "Today we're going to discuss an interesting topic" },
-    { id: 3, startTime: 7.1, endTime: 10.5, text: 'About the application of AI in video production' },
-    { id: 4, startTime: 11.0, endTime: 14.2, text: "Let's get started" },
-    { id: 5, startTime: 15.0, endTime: 18.5, text: "First let's look at the basic concepts" },
-  ]
-  translatedSubtitles.value = mockTranslated
-}
+onUnmounted(() => {
+  unlisten?.()
+})
 </script>
 
 <template>
@@ -72,15 +95,17 @@ function generateMockTranslation() {
       </div>
 
       <div class="field">
-        <label class="field-label">翻译引擎</label>
-        <select v-model="translateEngine" class="select">
-          <option value="google">Google Translate</option>
-          <option value="deepl">DeepL</option>
-          <option value="openai">OpenAI</option>
-        </select>
+        <label class="field-label">AI 模型</label>
+        <div v-if="defaultConfig" class="ai-info">
+          <span class="ai-info__name">{{ defaultConfig.title }}</span>
+          <span class="ai-info__meta">{{ defaultConfig.model }}</span>
+        </div>
+        <span v-else class="field-warn">未配置默认 AI 模型，请先在设置中添加</span>
       </div>
 
-      <button class="btn btn--primary" @click="startTranslation">开始翻译</button>
+      <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
+
+      <button class="btn btn--primary" @click="startTranslation" :disabled="!defaultConfig">开始翻译</button>
     </div>
 
     <!-- Processing state -->
@@ -238,5 +263,42 @@ function generateMockTranslation() {
 
 .btn--secondary:hover {
   background: var(--bg-elevated);
+}
+
+.ai-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ai-info__name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.ai-info__meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.field-warn {
+  font-size: 13px;
+  color: var(--status-warning);
+}
+
+.error-msg {
+  margin: 0;
+  font-size: 13px;
+  color: var(--status-error);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 </style>
