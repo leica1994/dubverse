@@ -113,7 +113,7 @@ async function onClickSelect() {
   max-width: 600px;
   width: 100%;
   margin: 0 auto;
-  padding: 52px 40px 44px;
+  padding: clamp(24px, 5vh, 52px) clamp(20px, 4vw, 40px) clamp(20px, 4vh, 44px);
   border: 2px dashed var(--border);
   border-radius: 20px;
   display: flex;
@@ -164,15 +164,15 @@ async function onClickSelect() {
 /* ── Upload icon ────────────────────────────────────────────────────────── */
 
 .drop-zone__icon-wrap {
-  width: 72px;
-  height: 72px;
+  width: clamp(48px, 8vw, 72px);
+  height: clamp(48px, 8vw, 72px);
   border-radius: 18px;
   background: var(--bg-hover);
   border: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 22px;
+  margin-bottom: clamp(12px, 2vh, 22px);
   transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
               background 0.2s ease,
               border-color 0.2s ease;

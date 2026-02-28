@@ -61,10 +61,10 @@ async function close() { await appWindow.close() }
     <div class="app-layout">
       <AppSidebar />
       <div class="main-wrapper">
-        <div class="page-header">
+        <div v-if="!route.meta?.flush" class="page-header">
           <h1 class="page-title">{{ pageTitle }}</h1>
         </div>
-        <main class="main-content">
+        <main class="main-content" :class="{ 'main-content--flush': route.meta?.flush }">
           <router-view />
         </main>
       </div>
@@ -172,5 +172,12 @@ async function close() { await appWindow.close() }
   flex: 1;
   overflow-y: auto;
   padding: 24px;
+}
+
+.main-content--flush {
+  overflow: hidden;
+  padding: 0;
+  container-type: inline-size;
+  container-name: workbench-root;
 }
 </style>

@@ -11,7 +11,7 @@ const router = createRouter({
         {
           path: '',
           name: 'workspace',
-          meta: { title: '工作台' },
+          meta: { title: '工作台', flush: true },
           component: () => import('../views/WorkspaceView.vue'),
         },
         {

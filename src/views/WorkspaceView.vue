@@ -32,22 +32,20 @@ function handlePrev() {
 
 <template>
   <div class="workbench">
-    <div class="workbench__body">
-      <StepIndicator
-        :current-step="currentStep"
-        :statuses="stepStatuses"
-        @navigate="goToStep"
-      />
+    <StepIndicator
+      :current-step="currentStep"
+      :statuses="stepStatuses"
+      @navigate="goToStep"
+    />
 
-      <div class="workbench__content">
-        <Transition :name="direction === 'forward' ? 'step-fwd' : 'step-bwd'" mode="out-in">
-          <StepUpload v-if="currentStep === 0" key="0" />
-          <StepTranscribe v-else-if="currentStep === 1" key="1" />
-          <StepTranslate v-else-if="currentStep === 2" key="2" />
-          <StepDubbing v-else-if="currentStep === 3" key="3" />
-          <StepExport v-else-if="currentStep === 4" key="4" />
-        </Transition>
-      </div>
+    <div class="workbench__content">
+      <Transition :name="direction === 'forward' ? 'step-fwd' : 'step-bwd'" mode="out-in">
+        <StepUpload v-if="currentStep === 0" key="0" />
+        <StepTranscribe v-else-if="currentStep === 1" key="1" />
+        <StepTranslate v-else-if="currentStep === 2" key="2" />
+        <StepDubbing v-else-if="currentStep === 3" key="3" />
+        <StepExport v-else-if="currentStep === 4" key="4" />
+      </Transition>
     </div>
 
     <div class="workbench__footer">
@@ -56,18 +54,23 @@ function handlePrev() {
         :disabled="!canGoPrev"
         @click="handlePrev"
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6" />
         </svg>
         上一步
       </button>
+
+      <div class="workbench__step-hint">
+        {{ currentStep + 1 }} / 5
+      </div>
+
       <button
         class="btn btn--primary"
         :disabled="!canGoNext"
         @click="handleNext"
       >
         下一步
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 18 15 12 9 6" />
         </svg>
       </button>
@@ -76,6 +79,8 @@ function handlePrev() {
 </template>
 
 <style scoped>
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+
 .workbench {
   display: flex;
   flex-direction: column;
@@ -83,36 +88,43 @@ function handlePrev() {
   min-height: 0;
 }
 
-.workbench__body {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-}
-
 .workbench__content {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 24px;
+  padding: clamp(12px, 2.5vh, 24px) clamp(14px, 2.5vw, 24px);
   position: relative;
 }
 
 .workbench__footer {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  padding: 14px 24px;
+  padding: 10px 24px;
   border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex-shrink: 0;
 }
 
-/* ── Buttons ─────────────────────────────────────────────────────────── */
+@media (max-height: 520px) {
+  .workbench__footer { padding: 6px 16px; }
+}
+
+.workbench__step-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
 
 .btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 22px;
-  border-radius: 10px;
-  font-size: 14px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   border: none;
@@ -123,22 +135,22 @@ function handlePrev() {
 .btn--primary {
   background: var(--accent);
   color: #fff;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.28);
 }
 
 .btn--primary:hover:not(:disabled) {
   background: var(--accent-hover);
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.45);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
   transform: translateY(-1px);
 }
 
 .btn--primary:active:not(:disabled) {
   transform: translateY(0);
-  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.30);
+  box-shadow: 0 2px 4px rgba(99, 102, 241, 0.25);
 }
 
 .btn--secondary {
-  background: var(--bg-elevated);
+  background: transparent;
   color: var(--text-secondary);
   border: 1px solid var(--border);
 }
@@ -150,37 +162,38 @@ function handlePrev() {
 }
 
 .btn:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
-/* ── Step transition: forward (slide left) ────────────────────────────── */
+/* ── Step transitions ────────────────────────────────────────────────────── */
 
 .step-fwd-enter-active,
 .step-fwd-leave-active,
 .step-bwd-enter-active,
 .step-bwd-leave-active {
-  transition: opacity 0.24s cubic-bezier(0.4, 0, 0.2, 1),
-              transform 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .step-fwd-enter-from {
   opacity: 0;
-  transform: translateX(28px);
+  transform: translateX(22px);
 }
 
 .step-fwd-leave-to {
   opacity: 0;
-  transform: translateX(-28px);
+  transform: translateX(-22px);
 }
 
 .step-bwd-enter-from {
   opacity: 0;
-  transform: translateX(-28px);
+  transform: translateX(-22px);
 }
 
 .step-bwd-leave-to {
   opacity: 0;
-  transform: translateX(28px);
+  transform: translateX(22px);
 }
 </style>

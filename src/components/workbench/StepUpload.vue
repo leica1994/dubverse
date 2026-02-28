@@ -113,7 +113,7 @@ function onFileDrop({ name, path, file }: { name: string; path: string; file?: F
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 320px;
+  min-height: min(320px, 60vh);
   padding: 8px 0;
 }
 

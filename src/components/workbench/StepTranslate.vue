@@ -534,6 +534,23 @@ onUnmounted(() => {
   border-right: 1px solid var(--border);
 }
 
+@container workbench-root (max-width: 560px) {
+  .translate-subtitle-body {
+    grid-template-columns: 1fr;
+  }
+  .translate-subtitle-col:first-child {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .translate-subtitle-header {
+    grid-template-columns: 1fr;
+  }
+  .translate-subtitle-header span:first-child {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
 /* ── Completed state ───────────────────────────────────────────────────── */
 
 .translate-completed {
