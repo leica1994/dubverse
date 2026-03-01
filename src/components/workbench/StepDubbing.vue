@@ -40,7 +40,7 @@ onMounted(async () => {
     const resumable = await dubbing.checkResumableJob(projectDir.value)
     // Only show resume prompt if the workbench step is not already marked completed.
     // If stepStatuses[3] === 'completed', the job info is loaded (stages visible) but we skip the prompt.
-    if (resumable && dubbing.jobInfo.value && stepStatuses.value[3] !== 'completed') {
+    if (resumable && dubbing.jobInfo.value && stepStatuses.value[3] !== 'completed' && !dubbing.isRunning.value) {
       resumePrompt.value = true
       // Restore config from existing job
       const job = dubbing.jobInfo.value
@@ -127,6 +127,9 @@ async function startDubbing() {
     })
     dubbing.outputPath.value = outputPath
 
+    if (dubbing.jobInfo.value) {
+      dubbing.jobInfo.value = { ...dubbing.jobInfo.value, status: 'completed' }
+    }
     setStepStatus(3, 'completed')
     await saveProgress()
   } catch (err) {
